@@ -20,6 +20,7 @@ Note that both the [ESIOS](https://api.esios.ree.es/) and [ENTSO-e](https://tran
 
 These are the core scripts of the project: the model, scenarios and Monte Carlo simulations.
 Forking this repository you can play with the model and/or scenarios to test how the model responds to other assumptions.
+Note that you will need a [Gurobi license](https://www.gurobi.com/academia/academic-program-and-licenses/) to run the model. 
 If you do, we would love to get your feedback!
 
 -   21_electricity_market_model.jl defines the model we have used to 
