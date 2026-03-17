@@ -2,7 +2,7 @@
 
 This is the repository for the paper: "Modeling Spain’s Power System Expansion: A Path Toward 81% Renewable Integration and Resilient Electrification by 2030" *(revisar el título una vez sea definitivo)* *published in ...* 
 
-## Abstract
+## Abstract (main results)
 
 *(revisar una vez sea definitivo)* 
 
@@ -18,17 +18,14 @@ We conclude that bridging the gap to 2030 requires an urgent policy shift toward
 
 ## Methdology summary
 
-We have developed a 
+*revisar*
 
-We develop a partial-equilibrium power system model
-using the JuMP modeling language in Julia [13], solved with
-Gurobi [8]. Following Reguant’s methodology for large-
-scale renewable integration in the Iberian Peninsula [17],
-the model simulates a social planner who aims to maximize
-social welfare defined as the sum of consumer surplus (CS)
-and producer revenue (PR) minus the total costs, by choosing
-the optimal electricity mix for each hour, subject to market
-clearing and capacity constraints
+We have developed a partial-equilibrium social planner model that replciates the functioning of the Spanish electricity market (under perfect competition). 
+In particular, it maximizes social welfare by choosing the optimal electricity mix for each hour, subject to market clearing, capacity constraints and intertemporal linkages in production (ramp-up and ramp-down processes in thermal units, storage flows for batteries and pumped hydro, and almost continuous production for nuclear).
+We have used 2020-2024 high-frecuency data to calibrate the model, including hourly generation, sectoral demand, electricity prices, fuel prices and EU ETS prices as well as montlhly installed capacity data and fixed and variable O&M cost estimates for up to 16 different electricity-generating technologies.
+
+Since the purpose of the paper is to analyze the electricity system in 2030, we have gathered data on projections of installed capacity, electricity demand and commodity prices to that target year.
+To handle the uncertainty on what will be the specific realization, we run 10,000 Monte Carlo simulations on 4 different scenarios, keeping track of the average renewable share in each iteration as well as other outcomes such as the total emissions, battery inflos and outflows, etcetera.
 
 ## Versions
 
@@ -37,25 +34,18 @@ Cristobal and Pau continued working in the second version, polishing scripts, va
 
 ## How to navigate the repository
 
-The repository follows standard practices: it contains three folders (data, scrpits and outputs) containing all the 
-
+The repository follows standard practices: it contains three folders (data, scrpits and outputs) containing all the ingredients needed to replicate the paper.
+Each folder contains its own README.md file with specific guidelines to navigate each folder. 
 
 ## Instructions to replicate the paper
 
+...
 
 ## Limitations of the study
+
+...
 
 ## Credits
 
 *How to cite our work?*
-
-Common structure:
-Title
-Motivation
-Description of the technology used (and why)
-Description of the process (and why we have done it this way)
-Table of contents
-Limitations
-Challenges
-Intended use
-Credits
+...
