@@ -23,3 +23,29 @@
 # hourly_data.a_exp_FRA = hourly_data.exports_France_mwh + hourly_data.b_exp_FRA .* hourly_data.spot_price_eur_mwh
 # hourly_data.a_exp_POR = hourly_data.exports_Portugal_mwh + hourly_data.b_exp_POR .* hourly_data.spot_price_eur_mwh
 # hourly_data.a_exp_MOR = hourly_data.exports_Morocco_mwh + hourly_data.b_exp_MOR .* hourly_data.spot_price_eur_mwh
+
+
+# esto estaba dentro del modelo
+
+    # # Import costs
+    # @constraint(model, [t=1:T],
+    #     import_costs[t] == - hourly_data.a_imp_FRA[t]/hourly_data.b_imp_FRA[t]*imports[t,1] + imports[t,1]^2/(2 * hourly_data.b_imp_FRA[t])
+    #                      - hourly_data.a_imp_POR[t]/hourly_data.b_imp_POR[t]*imports[t,2] + imports[t,2]^2/(2 * hourly_data.b_imp_POR[t]) 
+    #                      - hourly_data.a_imp_MOR[t]/hourly_data.b_imp_MOR[t]*imports[t,3] + imports[t,3]^2/(2 * hourly_data.b_imp_MOR[t]));     
+
+    # # Export revenues
+    # @constraint(model, [t=1:T],
+    #     export_revenues[t] ==  hourly_data.a_exp_FRA[t]/hourly_data.b_exp_FRA[t]*exports[t,1] - exports[t,1]^2/(2 * hourly_data.b_exp_FRA[t])
+    #                         + hourly_data.a_exp_POR[t]/hourly_data.b_exp_POR[t]*exports[t,2] - exports[t,2]^2/(2 * hourly_data.b_exp_POR[t]) 
+    #                         + hourly_data.a_exp_MOR[t]/hourly_data.b_exp_MOR[t]*exports[t,2] - exports[t,3]^2/(2 * hourly_data.b_exp_MOR[t]));
+
+    
+    # # Contraints on interconnectors capacity
+    # @constraint(model, [t=1:T], imports[t,1] <= 2.8 * (1 + interconnectors_delta[1]));
+    # @constraint(model, [t=1:T], exports[t,1] <= 3.3 * (1 + interconnectors_delta[2]));
+
+    # @constraint(model, [t=1:T], imports[t,2] <= 3.0 * (1 + interconnectors_delta[3]));
+    # @constraint(model, [t=1:T], exports[t,2] <= 3.0 * (1 + interconnectors_delta[4]));
+
+    # @constraint(model, [t=1:T], imports[t,3] <= 0.6 * (1 + interconnectors_delta[5]));
+    # @constraint(model, [t=1:T], exports[t,3] <= 0.9 * (1 + interconnectors_delta[6])); 

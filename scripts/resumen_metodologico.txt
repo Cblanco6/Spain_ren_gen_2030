@@ -1,0 +1,21 @@
+hourly_data (histórico)
+    → "molde" de patrones horarios/mensuales reales
+    → se escala con projection_deltas para situar en 2030
+    → se muestrea (semana aleatoria por mes) → new_data
+
+new_data → set_iteration_specific_parameters → params
+params + new_data + fixed_data + scenario_parameters → dispatch_electricity_market
+
+
+# estructura de las simulaciones de Monte Carlo
+scenarios = ["baseline", "scenario_1", "scenario_2", "scenario_3"]
+
+for scenario in scenarios
+    scenario_params = filter(row -> row.scenario == scenario, scenario_parameters)
+    
+    for i in 1:num_iterations
+        new_data = sample_week(hourly_data)
+        params = set_iteration_specific_parameters(new_data, ...)
+        result = dispatch_electricity_market(new_data, fixed_data, scenario_params, params, ...)
+    end
+end

@@ -42,67 +42,91 @@ decay_batt = 0.001      # hourly self-loss ratio
 # General grid loss factor
 general_loss_factor = 0.015
 
+# ===== Auxiliary function to define iteration-specific parameters =====
+# Since the model is designed to be solved for many possible realizations of the future,
+# some parameters shall be computed for each iteration (since the input data will be different)
 
-# ===== Define the model: dispatch_electricity_market function =====
+function set_iteration_specific_parameters(hourly_data::DataFrame)
 
+    # Parameters defining domestic demand functions are re-computed in each simulation
+    # (pasarlo a GWh!)
+    b_residential = elas_residential * hourly_data.residential_demand_mwh ./ hourly_data.spot_price_eur_mwh
+    b_commercial = elas_commercial * hourly_data.commercial_demand_mwh ./ hourly_data.spot_price_eur_mwh
+    b_industrial = elas_industrial * hourly_data.industrial_demand_mwh ./ hourly_data.spot_price_eur_mwh
+
+    a_residential = hourly_data.residential_demand_mwh + b_residential .* hourly_data.spot_price_eur_mwh
+    a_commercial = hourly_data.commercial_demand_mwh + b_commercial .* hourly_data.spot_price_eur_mwh
+    a_industrial = hourly_data.industrial_demand_mwh + b_industrial .* hourly_data.spot_price_eur_mwh
+
+    # Hydro bundles for weekly allocation maximization are also defined within the model
+    bundle_size = 168   # number of hours in a week
+    total_hours = size(hourly_data, 1)
+    n_bundles = div(total_hours, bundle_size)
+    
+    starts = [1 + (w - 1) * bundle_size for w in 1:n_bundles]
+    #> [1, 169, 337, 505, ...]  (initial hours every week)
+
+    bundles = [s:s + bundle_size - 1 for s in starts[1:n_bundles]]
+    #> [1:168, 169:336, 337:504, ...]  (hour intervals for every week)
+
+    # set lower and upper bound production levels per week
+    hydro_min_weekly = [minimum(hourly_data.conventional_hydro_gen_mwh[b]) for b in bundles]
+    hydro_max_weekly = [maximum(hourly_data.conventional_hydro_gen_mwh[b]) for b in bundles]
+
+    # set the same minimum and maximum hourly production values for all hours of the week
+    hydro_min_hourly = zeros(Float64, total_hours)
+    hydro_max_hourly = zeros(Float64, total_hours)
+
+    for (w, b) in enumerate(bundles)
+        hydro_min_hourly[b] .= hydro_min_weekly[w]
+        hydro_max_hourly[b] .= hydro_max_weekly[w]
+    end
+
+    # total hydro production per week (which the model then allocats per hour)
+    hydro_weekly_totals = [sum(hourly_data.conventional_hydro_gen_mwh[b]) for b in bundles]
+
+    # define water availability for run of river hydro with a stylized definition of seasonality
+    ror_lo = [ror_bounds(new_data.month[t])[1] for t in 1:T]
+    ror_hi = [ror_bounds(new_data.month[t])[2] for t in 1:T]
+
+    ph_nat_in = hourly_data.eff_75_Average
+
+    return (;
+        a_residential, b_residential,
+        a_commercial,  b_commercial,
+        a_industrial,  b_industrial,
+        hydro_min_hourly, hydro_max_hourly, hydro_weekly_totals,
+        ph_nat_in,
+        ror_lo, ror_hi,
+    )
+
+end
+
+
+# ===== Definition of the model: dispatch_electricity_market function =====
 function dispatch_electricity_market(
     hourly_data::DataFrame, 
     fixed_data::DataFrame, 
     scenario_parameters::DataFrame,
-    interconnectors_delta::Vector; 
+    iteration_specific_params::NamedTuple,
+    interconnectors_delta::Vector; # revisar si finalmente los usamos
     loss_factor::Float64 = general_loss_factor, 
-    years_solving::Float64 = 0.230137)
-  
-    model = Model(Gurobi.Optimizer)
+    years_solving::Float64 = 0.230137
+    )
 
+    # initialize the model solver and parameters
+    model = Model(Gurobi.Optimizer)
     set_optimizer_attribute(model, "OutputFlag", 0)  
     set_optimizer_attribute(model, "TimeLimit", 300) 
     set_optimizer_attribute(model, "MIPGap", 0.03)
 
+    # set indices
     T = nrow(hourly_data);
     I = nrow(fixed_data);
     S = 3 # we have 3 sectors: residential, commercial and industrial
     C = 3 # import/export flows with 3 countries (POR, FRA, MOR)
 
-    # Define parameters for domestic demand functions
-    hourly_data.b_residential = elas_residential * hourly_data.residential_demand_mwh ./ hourly_data.spot_price_eur_mwh
-    hourly_data.b_commercial = elas_commercial * hourly_data.commercial_demand_mwh ./ hourly_data.spot_price_eur_mwh
-    hourly_data.b_industrial = elas_industrial * hourly_data.industrial_demand_mwh ./ hourly_data.spot_price_eur_mwh
-
-    hourly_data.a_residential = hourly_data.residential_demand_mwh + hourly_data.b_residential .* hourly_data.spot_price_eur_mwh
-    hourly_data.a_commercial = hourly_data.commercial_demand_mwh + hourly_data.b_commercial .* hourly_data.spot_price_eur_mwh
-    hourly_data.a_industrial = hourly_data.industrial_demand_mwh + hourly_data.b_industrial .* hourly_data.spot_price_eur_mwh
-
-    # Hydro bundles for weekly allocation maximization
-    bundle_size = 168
-    total_hours = size(hourly_data, 1)
-    n_bundles = div(total_hours, bundle_size)
-    
-    starts = [1 + (w - 1) * bundle_size for w in 1:n_bundles]
-    bundles = [s:s + bundle_size - 1 for s in starts[1:n_bundles]]
-
-    hydro_min_weekly = [minimum(hourly_data.conventional_hydro_gen_mwh[b]) for b in bundles]
-    hydro_max_weekly = [maximum(hourly_data.conventional_hydro_gen_mwh[b]) for b in bundles]
-
-    hydro_min_hourly = zeros(Float64, total_hours)
-    hydro_max_hourly = zeros(Float64, total_hours)
-
-    for (w, b) in enumerate(bundles)
-    hydro_min_hourly[b] .= hydro_min_weekly[w]
-    hydro_max_hourly[b] .= hydro_max_weekly[w]
-    end
-
-    hydro_weekly_totals = [sum(hourly_data.conventional_hydro_gen_mwh[b]) for b in bundles]
-
-    # For run of river seasonality
-    high_prod_months = [t for t in 1:T if hourly_data.month[t] in (1, 3, 12)]
-    med_high_prod_months = [t for t in 1:T if hourly_data.month[t] in (2, 4, 5, 6)]
-    med_low_prod_months = [t for t in 1:T if hourly_data.month[t] in (7, 11)]
-    low_prod_months = [t for t in 1:T if hourly_data.month[t] in (8, 9, 10)]
-
-    ph_nat_in = hourly_data.eff_75_Average
-
-
+    # define variables that the model solves
     @variable(model, price[1:T] >= 0);
     @variable(model, demand[1:T, 1:S] >= 0);
     @variable(model, imports[1:T, 1:C] >= 0); 
@@ -116,8 +140,6 @@ function dispatch_electricity_market(
     @variable(model, lifecycle_emissions[1:T] >= 0);
     @variable(model, direct_emissions[1:T] >= 0);  
     @variable(model, emissions_costs[1:T] >= 0);
-    # @variable(model, import_costs[1:T] >= 0);
-    # @variable(model, export_revenues[1:T] >= 0);
     @variable(model, min_non_ren_gen[1:T] >= 0); 
     @variable(model, ph_in[t=1:T] >= 0);
     @variable(model, ph_out[t=1:T] >= 0);
@@ -126,7 +148,7 @@ function dispatch_electricity_market(
     @variable(model, batt_out[t=1:T] >= 0);   
     @variable(model, batt_stock[1:T] >= 0); 
 
-    # Objective function, maximize social welfare 
+    # Objective function: maximize social welfare 
     @objective(model, Max, sum(consumer_surplus[t] + producer_revenue[t] - costs[t] for t=1:T)/T);
 
     # Market Clearing: Generation + imports - exports = demand 
@@ -136,16 +158,16 @@ function dispatch_electricity_market(
     # Definition of consumer surplus (producer surplus + consumer surplus)
     @constraint(model, [t=1:T], 
         consumer_surplus[t] == 
-            demand[t,1]^2/(2*hourly_data.b_residential[t]) 
-            + demand[t,2]^2/(2*hourly_data.b_commercial[t]) 
-            + demand[t,3]^2/(2*hourly_data.b_industrial[t]));
+            demand[t,1]^2/(2*b_residential[t]) 
+            + demand[t,2]^2/(2*b_commercial[t]) 
+            + demand[t,3]^2/(2*b_industrial[t]));
 
-    # Definition of consumer surplus (producer surplus + consumer surplus)
+    # Definition of producer revenue (producer surplus + consumer surplus)
     @constraint(model, [t=1:T], 
         producer_revenue[t] == 
-            (hourly_data.a_residential[t] - demand[t,1]) * demand[t,1] / hourly_data.b_residential[t] 
-            + (hourly_data.a_commercial[t] - demand[t,2]) * demand[t,2] / hourly_data.b_commercial[t]
-            + (hourly_data.a_industrial[t] - demand[t,3]) * demand[t,3] / hourly_data.b_industrial[t]);
+            (a_residential[t] - demand[t,1]) * demand[t,1] / b_residential[t] 
+            + (a_commercial[t] - demand[t,2]) * demand[t,2] / b_commercial[t]
+            + (a_industrial[t] - demand[t,3]) * demand[t,3] / b_industrial[t]);
 
     # Definition of costs (fixed + running)   
     @constraint(model, [t=1:T],
@@ -174,22 +196,10 @@ function dispatch_electricity_market(
     @constraint(model, [t=1:T],
         emissions_costs[t] == sum((fixed_data.fossil_fuel[i] * hourly_data.eu_ets_price_eur_tco2[t] * quantity[t,i] * fixed_data.direct_e_tco2_mwh[i]) for i in 1:I));        
         
-    # # Import costs
-    # @constraint(model, [t=1:T],
-    #     import_costs[t] == - hourly_data.a_imp_FRA[t]/hourly_data.b_imp_FRA[t]*imports[t,1] + imports[t,1]^2/(2 * hourly_data.b_imp_FRA[t])
-    #                      - hourly_data.a_imp_POR[t]/hourly_data.b_imp_POR[t]*imports[t,2] + imports[t,2]^2/(2 * hourly_data.b_imp_POR[t]) 
-    #                      - hourly_data.a_imp_MOR[t]/hourly_data.b_imp_MOR[t]*imports[t,3] + imports[t,3]^2/(2 * hourly_data.b_imp_MOR[t]));     
-
-    # # Export revenues
-    # @constraint(model, [t=1:T],
-    #     export_revenues[t] ==  hourly_data.a_exp_FRA[t]/hourly_data.b_exp_FRA[t]*exports[t,1] - exports[t,1]^2/(2 * hourly_data.b_exp_FRA[t])
-    #                         + hourly_data.a_exp_POR[t]/hourly_data.b_exp_POR[t]*exports[t,2] - exports[t,2]^2/(2 * hourly_data.b_exp_POR[t]) 
-    #                         + hourly_data.a_exp_MOR[t]/hourly_data.b_exp_MOR[t]*exports[t,2] - exports[t,3]^2/(2 * hourly_data.b_exp_MOR[t]));
-
     # Definition of demand
-    @constraint(model, [t=1:T], demand[t,1] == hourly_data.a_residential[t] - hourly_data.b_residential[t] * price[t]);
-    @constraint(model, [t=1:T], demand[t,2] == hourly_data.a_commercial[t] - hourly_data.b_commercial[t] * price[t]);
-    @constraint(model, [t=1:T], demand[t,3] == hourly_data.a_industrial[t] - hourly_data.b_industrial[t] * price[t]);
+    @constraint(model, [t=1:T], demand[t,1] == a_residential[t] - b_residential[t] * price[t]);
+    @constraint(model, [t=1:T], demand[t,2] == a_commercial[t] - b_commercial[t] * price[t]);
+    @constraint(model, [t=1:T], demand[t,3] == a_industrial[t] - b_industrial[t] * price[t]);
     
     # Definition of imports    
     @constraint(model, [t=1:T], imports[t,1] == hourly_data.imports_France_mwh[t]);            
@@ -201,7 +211,7 @@ function dispatch_electricity_market(
     @constraint(model, [t=1:T], exports[t,2] == hourly_data.exports_Portugal_mwh[t]);         
     @constraint(model, [t=1:T], exports[t,3] == hourly_data.exports_Morocco_mwh[t]);
             
-    # OUTPUT CONSTRAINTS 
+    # Output constraints 
     # NON-RENEWABLES: specific modeling for Nuclear and calibration of ramping costs for the thermal plants
     @constraint(model, [t=1:T], quantity[t,1] >= 0.15 * hourly_data.coal_cap_mw[t]);
     @constraint(model, [t=1:T], quantity[t,1] <= 0.65 * hourly_data.coal_cap_mw[t]); 
@@ -248,14 +258,11 @@ function dispatch_electricity_market(
     @constraint(model, [t=2:T], quantity[t,9] - quantity[t-1,9] <= +0.1 * hourly_data.conventional_hydro_cap_mw[t]);    
 
     # Run of river hydro (seasonality constraints linked to monthly historical production)
-    @constraint(model, [t in high_prod_months], 0.30 * hourly_data.run_of_river_hydro_cap_mw[t] <= quantity[t,10] <= 0.50 * hourly_data.run_of_river_hydro_cap_mw[t]);
-    @constraint(model, [t in med_high_prod_months], 0.20 * hourly_data.run_of_river_hydro_cap_mw[t] <= quantity[t,10] <= 0.40 * hourly_data.run_of_river_hydro_cap_mw[t]);
-    @constraint(model, [t in med_low_prod_months], 0.15 * hourly_data.run_of_river_hydro_cap_mw[t] <= quantity[t,10] <= 0.30 * hourly_data.run_of_river_hydro_cap_mw[t]);
-    @constraint(model, [t in low_prod_months], 0.10 * hourly_data.run_of_river_hydro_cap_mw[t] <= quantity[t,10] <= 0.15 * hourly_data.run_of_river_hydro_cap_mw[t]);
+    @constraint(model, [t=1:T], params.ror_lo[t] * cap[t] <= quantity[t,10] <= params.ror_hi[t] * cap[t])  
     @constraint(model, [t=2:T], quantity[t,10] - quantity[t-1,10] >= -0.2 * hourly_data.run_of_river_hydro_cap_mw[t]);
     @constraint(model, [t=2:T], quantity[t,10] - quantity[t-1,10] <= +0.2 * hourly_data.run_of_river_hydro_cap_mw[t]);
 
-    # Pumped hydro
+    # Pumped hydro (works as a battery)
     @constraint(model, ph_stock[1] == 0.5 * storage_cap_ph); # Initial stock of pumped hydro is 50% of the capacity
     @constraint(model, [t=2:T], ph_stock[t] <= storage_cap_ph);
     @constraint(model, [t=2:T], ph_stock[t] == ph_stock[t-1] + eff_ph * ph_in[t-1] - ph_out[t-1] + ph_nat_in[t-1]);
@@ -284,17 +291,7 @@ function dispatch_electricity_market(
     @constraint(model, [t=2:T], batt_stock[t] == (1 - decay_batt) * batt_stock[t-1] + eff_batt * batt_in[t-1] - batt_out[t-1] / eff_batt);
     @constraint(model, [t=1:T], batt_out[t] <= 0.25 * hourly_data.batteries_cap_mw[t]);
     @constraint(model, [t=1:T], batt_in[t] <= 0.25 * hourly_data.batteries_cap_mw[t]);
-    @constraint(model, [t=1:T], quantity[t,17] == batt_out[t]);
-
-    # # Contraints on interconnectors capacity
-    # @constraint(model, [t=1:T], imports[t,1] <= 2.8 * (1 + interconnectors_delta[1]));
-    # @constraint(model, [t=1:T], exports[t,1] <= 3.3 * (1 + interconnectors_delta[2]));
-    
-    # @constraint(model, [t=1:T], imports[t,2] <= 3.0 * (1 + interconnectors_delta[3]));
-    # @constraint(model, [t=1:T], exports[t,2] <= 3.0 * (1 + interconnectors_delta[4]));
-
-    # @constraint(model, [t=1:T], imports[t,3] <= 0.6 * (1 + interconnectors_delta[5]));
-    # @constraint(model, [t=1:T], exports[t,3] <= 0.9 * (1 + interconnectors_delta[6]));  
+    @constraint(model, [t=1:T], quantity[t,17] == batt_out[t]); 
           
     optimize!(model)
     
