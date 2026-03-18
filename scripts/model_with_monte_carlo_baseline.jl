@@ -1,3 +1,6 @@
+# This script defines the model that simulates the Spanish electricity market
+
+# load the required libraries
 using DataFrames
 using CSV
 using XLSX
@@ -12,43 +15,44 @@ using Distributed
 using Distributions
 using KernelDensity
 
-# Edit dirpath making sure it ends with "/" at the end
-dirpath = "/Users/marreguant/Documents/TFM_Cristobal_Tomas_Pau_v2/"
+# ===== Set dirpath to your working directory =====
+# for us it works better adding a "/" at the end
+dirpath = "path/to/your/directory/"
 
 
-# ===== Load data  =====
-hourly_data = CSV.read(string(dirpath, "Data/data_version3.csv"), DataFrame)
-fixed_data = CSV.read(string(dirpath, "Data/fixed_data_euros.csv"), DataFrame)
-projection_deltas = CSV.read(string(dirpath, "Data/projection_deltas_low_demand.csv"), DataFrame)
+# ===== Set general parameters =====
+# Elasticities of demand functions (domestic, imports, exports)
+# Values are lower than those usually found in the literature since otherwise the model becomes untractable
+elas_residential = 0.015 
+elas_commercial = 0.03
+elas_industrial = 0.05
 
-# Major fixes to the data
-# 1. Make sure all generation and cap factors are non-negative
-hourly_data.solar_thermal_gen_mwh .= ifelse.(hourly_data.solar_thermal_gen_mwh .< 0, 0, hourly_data.solar_thermal_gen_mwh)
-hourly_data.solar_thermal_cap_factor .= ifelse.(hourly_data.solar_thermal_cap_factor .< 0, 0, hourly_data.solar_thermal_cap_factor)
+# creo que no definimos demand functions para imports y exports
+elas_imports = 0.03
+elas_exports = 0.03
 
-# 2. Set minimum price to be 0.5 such that demand functions are well defined
-hourly_data.spot_price_eur_mwh .= ifelse.(hourly_data.spot_price_eur_mwh .<= 0.5, 0.5, hourly_data.spot_price_eur_mwh)
+# Pumped hydro parameters
+eff_ph = 0.75
+storage_cap_ph = 15.0   # no official figure for this; estiamtes range from 10-20 GW.
 
-# 3. Set all quantities to be in GWh/GW
-hourly_data[!,Between(:residential_demand_mwh,:batteries_gen_mwh)] = hourly_data[!,Between(:residential_demand_mwh,:batteries_gen_mwh)] ./ 1000.0 # Convert from MWh to GWh
-hourly_data[!,Between(:imports_France_mwh,:net_flows_Morocco_mwh)] = hourly_data[!,Between(:imports_France_mwh,:net_flows_Morocco_mwh)] ./ 1000.0 # Convert from MWh to GWh
-hourly_data[!,Between(:eff_65_Average,:eff_85_Average)] = hourly_data[!,Between(:eff_65_Average,:eff_85_Average)] ./ 1000.0 # Convert from MWh to GWh
+# Battery storage parameters
+eff_batt = 0.95         # Same for charge and discharge
+decay_batt = 0.001      # hourly self-loss ratio
 
-# 4. Set capacity in fixed_data to be in GW
-fixed_data.avg_cap_2024 .= fixed_data.avg_cap_2024 ./ 1000.0 # Convert from MW to GW
-
-# Define elasticities of demand functions (domestic, imports, exports)
-e_residential = 0.015 # Mar values are x10 these!
-e_commercial = 0.03
-e_industrial = 0.05
-e_imports = 0.03
-e_exports = 0.03
+# General grid loss factor
+general_loss_factor = 0.015
 
 
-# ===== Define dispatch_electricity_market function =====
+# ===== Define the model: dispatch_electricity_market function =====
 
-function dispatch_electricity_market(hourly_data::DataFrame, fixed_data::DataFrame, interconnectors_delta::Vector; loss_factor::Float64 = 0.0, years_solving::Float64 = 0.230137)
-        
+function dispatch_electricity_market(
+    hourly_data::DataFrame, 
+    fixed_data::DataFrame, 
+    scenario_parameters::DataFrame,
+    interconnectors_delta::Vector; 
+    loss_factor::Float64 = general_loss_factor, 
+    years_solving::Float64 = 0.230137)
+  
     model = Model(Gurobi.Optimizer)
 
     set_optimizer_attribute(model, "OutputFlag", 0)  
@@ -61,36 +65,13 @@ function dispatch_electricity_market(hourly_data::DataFrame, fixed_data::DataFra
     C = 3 # import/export flows with 3 countries (POR, FRA, MOR)
 
     # Define parameters for domestic demand functions
-    hourly_data.b_residential = e_residential * hourly_data.residential_demand_mwh ./ hourly_data.spot_price_eur_mwh
-    hourly_data.b_commercial = e_commercial * hourly_data.commercial_demand_mwh ./ hourly_data.spot_price_eur_mwh
-    hourly_data.b_industrial = e_industrial * hourly_data.industrial_demand_mwh ./ hourly_data.spot_price_eur_mwh
+    hourly_data.b_residential = elas_residential * hourly_data.residential_demand_mwh ./ hourly_data.spot_price_eur_mwh
+    hourly_data.b_commercial = elas_commercial * hourly_data.commercial_demand_mwh ./ hourly_data.spot_price_eur_mwh
+    hourly_data.b_industrial = elas_industrial * hourly_data.industrial_demand_mwh ./ hourly_data.spot_price_eur_mwh
 
     hourly_data.a_residential = hourly_data.residential_demand_mwh + hourly_data.b_residential .* hourly_data.spot_price_eur_mwh
     hourly_data.a_commercial = hourly_data.commercial_demand_mwh + hourly_data.b_commercial .* hourly_data.spot_price_eur_mwh
     hourly_data.a_industrial = hourly_data.industrial_demand_mwh + hourly_data.b_industrial .* hourly_data.spot_price_eur_mwh
-
-    # # Define parameters for imports and exports demand functions
-    # hourly_data.b_imp_FRA = e_imports * hourly_data.imports_France_mwh ./ hourly_data.spot_price_eur_mwh
-    # hourly_data.b_imp_POR = e_imports * hourly_data.imports_Portugal_mwh ./ hourly_data.spot_price_eur_mwh
-    # hourly_data.b_imp_MOR = e_imports * hourly_data.imports_Morocco_mwh ./ hourly_data.spot_price_eur_mwh
-    # hourly_data.b_exp_FRA = e_exports * hourly_data.exports_France_mwh ./ hourly_data.spot_price_eur_mwh
-    # hourly_data.b_exp_POR = e_exports * hourly_data.exports_Portugal_mwh ./ hourly_data.spot_price_eur_mwh
-    # hourly_data.b_exp_MOR = e_exports * hourly_data.exports_Morocco_mwh ./ hourly_data.spot_price_eur_mwh
-
-    # # We have set b to be the mean since in every hour either imports or exports = 0
-    # hourly_data.b_imp_FRA .= mean(hourly_data.b_imp_FRA)
-    # hourly_data.b_imp_POR .= mean(hourly_data.b_imp_POR)
-    # hourly_data.b_imp_MOR .= mean(hourly_data.b_imp_MOR)
-    # hourly_data.b_exp_FRA .= mean(hourly_data.b_exp_FRA)
-    # hourly_data.b_exp_POR .= mean(hourly_data.b_exp_POR)
-    # hourly_data.b_exp_MOR .= mean(hourly_data.b_exp_MOR)
-
-    # hourly_data.a_imp_FRA = hourly_data.imports_France_mwh - hourly_data.b_imp_FRA .* hourly_data.spot_price_eur_mwh
-    # hourly_data.a_imp_POR = hourly_data.imports_Portugal_mwh - hourly_data.b_imp_POR .* hourly_data.spot_price_eur_mwh
-    # hourly_data.a_imp_MOR = hourly_data.imports_Morocco_mwh - hourly_data.b_imp_MOR .* hourly_data.spot_price_eur_mwh
-    # hourly_data.a_exp_FRA = hourly_data.exports_France_mwh + hourly_data.b_exp_FRA .* hourly_data.spot_price_eur_mwh
-    # hourly_data.a_exp_POR = hourly_data.exports_Portugal_mwh + hourly_data.b_exp_POR .* hourly_data.spot_price_eur_mwh
-    # hourly_data.a_exp_MOR = hourly_data.exports_Morocco_mwh + hourly_data.b_exp_MOR .* hourly_data.spot_price_eur_mwh
 
     # Hydro bundles for weekly allocation maximization
     bundle_size = 168
@@ -119,14 +100,8 @@ function dispatch_electricity_market(hourly_data::DataFrame, fixed_data::DataFra
     med_low_prod_months = [t for t in 1:T if hourly_data.month[t] in (7, 11)]
     low_prod_months = [t for t in 1:T if hourly_data.month[t] in (8, 9, 10)]
 
-    # Define pumped hydro parameters
-    eff_ph = 0.75
-    storage_cap_ph = 15.0 # no official number for this estiamtes range from 10-20 GW.
     ph_nat_in = hourly_data.eff_75_Average
 
-    # Define battery parameters
-    eff_batt = 0.95  # Same for charge and discharge
-    decay_batt = 0.001  # hourly self-loss ratio
 
     @variable(model, price[1:T] >= 0);
     @variable(model, demand[1:T, 1:S] >= 0);
