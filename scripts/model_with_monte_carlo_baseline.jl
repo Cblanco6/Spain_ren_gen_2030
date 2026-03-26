@@ -6,14 +6,8 @@
 using DataFrames
 using CSV
 using JuMP
-using Plots
-using Printf
 using Statistics
-using StatsBase
-using GLM
 using Gurobi
-using Distributed
-using Distributions
 
 # ===== 1. Auxiliary function to define iteration-specific parameters =====
 # Since the model is designed to be solved for many possible realizations of the future,
