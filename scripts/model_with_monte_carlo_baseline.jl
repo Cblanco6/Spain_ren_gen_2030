@@ -60,12 +60,12 @@ function set_iteration_specific_parameters(
     hydro_weekly_totals = [sum(projected.conventional_hydro_gen_gwh[b]) for b in bundles]
 
     # Run of river hydro: hour indices by seasonal production group
-    high_prod_months     = [t for t in 1:T if projected.month[t] in (1, 3, 12)]
-    med_high_prod_months = [t for t in 1:T if projected.month[t] in (2, 4, 5, 6)]
-    med_low_prod_months  = [t for t in 1:T if projected.month[t] in (7, 11)]
-    low_prod_months      = [t for t in 1:T if projected.month[t] in (8, 9, 10)]
+    hours_high_ror     = [t for t in 1:T if projected.month[t] in (1, 3, 12)]
+    hours_med_high_ror = [t for t in 1:T if projected.month[t] in (2, 4, 5, 6)]
+    hours_med_low_ror  = [t for t in 1:T if projected.month[t] in (7, 11)]
+    hours_low_ror      = [t for t in 1:T if projected.month[t] in (8, 9, 10)]
 
-    ph_nat_in = projected.eff_75_Average
+    ph_nat_in = projected.eff_75_Average # esto habría que cambiarlo...
 
     return (;
         a_residential, b_residential,
@@ -235,22 +235,22 @@ function dispatch_electricity_market(
     # Conventional hydro (weekly allocation)
     @constraint(model, [t=1:T], quantity[t,9] >= iteration.hydro_min_hourly[t])
     @constraint(model, [t=1:T], quantity[t,9] <= iteration.hydro_max_hourly[t])
-    @constraint(model, [w in 1:iteration.n_bundles], sum(quantity[t,9] for t in iteration.bundles[w]) <= iteration.hydro_weekly_totals[w])
+    @constraint(model, [w in 1:iteration.n_bundles], sum(quantity[t,9] for t in iteration.bundles[w]) <= scenario.hydro_anomaly * iteration.hydro_weekly_totals[w])
     @constraint(model, [t=2:T], quantity[t,9] - quantity[t-1,9] >= -technical.conv_hydro_ramp * projected.conventional_hydro_cap_gw[t])
     @constraint(model, [t=2:T], quantity[t,9] - quantity[t-1,9] <= +technical.conv_hydro_ramp * projected.conventional_hydro_cap_gw[t])
 
     # Run of river hydro (seasonal availability bounds)
-    @constraint(model, [t in iteration.high_prod_months],     scenario.ror_lo_high     * projected.run_of_river_hydro_cap_gw[t] <= quantity[t,10] <= scenario.ror_hi_high     * projected.run_of_river_hydro_cap_gw[t])
-    @constraint(model, [t in iteration.med_high_prod_months], scenario.ror_lo_med_high * projected.run_of_river_hydro_cap_gw[t] <= quantity[t,10] <= scenario.ror_hi_med_high * projected.run_of_river_hydro_cap_gw[t])
-    @constraint(model, [t in iteration.med_low_prod_months],  scenario.ror_lo_med_low  * projected.run_of_river_hydro_cap_gw[t] <= quantity[t,10] <= scenario.ror_hi_med_low  * projected.run_of_river_hydro_cap_gw[t])
-    @constraint(model, [t in iteration.low_prod_months],      scenario.ror_lo_low      * projected.run_of_river_hydro_cap_gw[t] <= quantity[t,10] <= scenario.ror_hi_low      * projected.run_of_river_hydro_cap_gw[t])
+    @constraint(model, [t in iteration.hours_high_ror],     scenario.anomaly * technical.ror_lo_high     * projected.run_of_river_hydro_cap_gw[t] <= quantity[t,10] <= scenario.anomaly * technical.ror_hi_high     * projected.run_of_river_hydro_cap_gw[t])
+    @constraint(model, [t in iteration.hours_med_high_ror], scenario.anomaly * technical.ror_lo_med_high * projected.run_of_river_hydro_cap_gw[t] <= quantity[t,10] <= scenario.anomaly * technical.ror_hi_med_high * projected.run_of_river_hydro_cap_gw[t])
+    @constraint(model, [t in iteration.hours_med_low_ror],  scenario.anomaly * technical.ror_lo_med_low  * projected.run_of_river_hydro_cap_gw[t] <= quantity[t,10] <= scenario.anomaly * technical.ror_hi_med_low  * projected.run_of_river_hydro_cap_gw[t])
+    @constraint(model, [t in iteration.hours_low_ror],      scenario.anomaly * technical.ror_lo_low      * projected.run_of_river_hydro_cap_gw[t] <= quantity[t,10] <= scenario.anomaly * technical.ror_hi_low      * projected.run_of_river_hydro_cap_gw[t])
     @constraint(model, [t=2:T], quantity[t,10] - quantity[t-1,10] >= -technical.ror_ramp * projected.run_of_river_hydro_cap_gw[t])
     @constraint(model, [t=2:T], quantity[t,10] - quantity[t-1,10] <= +technical.ror_ramp * projected.run_of_river_hydro_cap_gw[t])
 
     # Pumped hydro
     @constraint(model, ph_stock[1] == 0.5 * technical.pumped_hydro_cap_gw)
     @constraint(model, [t=2:T], ph_stock[t] <= technical.pumped_hydro_cap_gw)
-    @constraint(model, [t=2:T], ph_stock[t] == ph_stock[t-1] + technical.eff_ph * ph_in[t-1] - ph_out[t-1] + iteration.ph_nat_in[t-1])
+    @constraint(model, [t=2:T], ph_stock[t] == ph_stock[t-1] + technical.eff_ph * ph_in[t-1] - ph_out[t-1] + scenario.ph_nat_in_anomaly * iteration.ph_nat_in[t-1])
     @constraint(model, [t=1:T], ph_out[t] <= technical.ph_out_max * projected.pumped_hydro_cap_gw[t])
     @constraint(model, [t=1:T], ph_in[t]  <= projected.pumped_hydro_cap_gw[t])
     @constraint(model, [t=1:T], quantity[t,11] == ph_out[t])
@@ -267,6 +267,7 @@ function dispatch_electricity_market(
     @constraint(model, [t=2:T], quantity[t,15] - quantity[t-1,15] <= +scenario.other_ren_ramp * projected.other_renewable_cap_gw[t])
 
     # Renewable waste
+    @constraint(model, [t=1:T], quantity[t,16] >= scenario.ren_waste_min * projected.renewable_waste_cap_gw[t])
     @constraint(model, [t=1:T], quantity[t,16] <= scenario.ren_waste_max * projected.renewable_waste_cap_gw[t])
     @constraint(model, [t=2:T], quantity[t,16] - quantity[t-1,16] >= -scenario.ren_waste_ramp * projected.renewable_waste_cap_gw[t])
     @constraint(model, [t=2:T], quantity[t,16] - quantity[t-1,16] <= +scenario.ren_waste_ramp * projected.renewable_waste_cap_gw[t])
