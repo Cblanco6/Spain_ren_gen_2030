@@ -1,0 +1,2 @@
+elas_residential,elas_commercial,elas_industrial,eff_ph,pumped_hydro_cap_gw,eff_batt,decay_batt,loss_factor,ror_ramp,conv_hydro_ramp,ph_out_max,ph_in_max,batt_duration
+0.015,0.03,0.05,0.75,15.0,0.95,0.001,0.015,0.2,0.1,0.75,1.0,0.25
