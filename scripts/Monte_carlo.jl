@@ -1,3 +1,11 @@
+function load_scenario_params(path::String, scenario_name::String)
+    df = CSV.read(path, DataFrame)
+    row = df[df.scenario .== scenario_name, :]
+    @assert nrow(row) == 1 "Escenario '$scenario_name' no encontrado o duplicado"
+    return NamedTuple(pairs(eachrow(row)[1]))
+end
+
+
 # ===== Monte Carlo Simulation set up =====
 # Pre-setup phase (run once)
 baseline_years = [2023, 2024]
