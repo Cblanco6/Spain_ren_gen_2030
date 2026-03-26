@@ -1,2 +1,5 @@
-scenario,coal_min,coal_max,coal_ramp,ccgt_min,ccgt_max,ccgt_ramp,cogen_min,cogen_max,cogen_ramp,diesel_min,non_ren_waste_max,non_ren_waste_ramp,other_ren_min,other_ren_max,other_ren_ramp,ren_waste_max,ren_waste_ramp,ror_lo_high,ror_hi_high,ror_lo_med_high,ror_hi_med_high,ror_lo_med_low,ror_hi_med_low,ror_lo_low,ror_hi_low
-baseline,0.15,0.65,0.05,0.05,1.0,0.25,0.15,0.6,0.1,0.3,0.4,0.01,0.25,0.6,0.05,0.65,0.05,0.30,0.50,0.20,0.40,0.15,0.30,0.10,0.15
+scenario;coal_min;coal_max;coal_ramp;ccgt_min;ccgt_max;ccgt_ramp;cogen_min;cogen_max;cogen_ramp;diesel_min;non_ren_waste_max;non_ren_waste_ramp;hydro_anomaly;ror_anomaly;ph_nat_in_anomaly;other_ren_min;other_ren_max;other_ren_ramp;ren_waste_min;ren_waste_max;ren_waste_ramp
+baseline;0.15;0.65;0.05;0.05;1.0;0.25;0.15;0.6;0.1;0.3;0.4;0.01;1.0;1.0;1.0;0.25;0.6;0.05;0;0.65;0.05
+nuclear;0.15;0.65;0.05;0.05;1.0;0.25;0.15;0.6;0.1;0.3;0.4;0.01;1.0;1.0;1.0;0.25;0.6;0.05;0;0.65;0.05
+optimistic;0.15;0.65;0.05;0.02;1.0;0.25;0.05;0.65;0.1;0.15;0.4;0.01;1.0;1.0;1.0;0.25;0.65;0.05;0;0.7;0.05
+climate change;0.15;0.65;0.05;0.05;1.0;0.25;0.15;0.6;0.1;0.3;0.4;0.01;0.8;0.8;0.8;0.25;0.65;0.05;0;0.7;0.05
