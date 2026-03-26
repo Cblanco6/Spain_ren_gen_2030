@@ -5,7 +5,6 @@
 # load the required libraries
 using DataFrames
 using CSV
-using XLSX
 using JuMP
 using Plots
 using Printf
@@ -15,13 +14,6 @@ using GLM
 using Gurobi
 using Distributed
 using Distributions
-using KernelDensity
-
-(quizás no es necesario!!)
-# ===== Set dirpath to your working directory =====
-# for us it works better adding a "/" at the end
-dirpath = "path/to/your/directory/"
-
 
 # ===== 1. Auxiliary function to define iteration-specific parameters =====
 # Since the model is designed to be solved for many possible realizations of the future,
@@ -165,7 +157,7 @@ function dispatch_electricity_market(
     # Fuel costs
     @constraint(model, [t=1:T],
         fuel_costs[t] ==
-            projected.cost_coal_eur_gwh[t]    * quantity[t,1] / technology.efficiency[1]   # coal
+            projected.cost_coal_eur_gwh[t]      * quantity[t,1] / technology.efficiency[1]   # coal
             + sum(projected.cost_gas_eur_gwh[t] * quantity[t,j] / technology.efficiency[j] for j in 2:5)  # natural gas
             + projected.cost_diesel_eur_gwh[t]  * quantity[t,6] / technology.efficiency[6]  # diesel
             + projected.cost_uranium_eur_gwh[t] * quantity[t,8] / technology.efficiency[8]) # nuclear
