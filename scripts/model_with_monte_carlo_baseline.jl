@@ -1,7 +1,6 @@
-# This script defines the parameters and functions needed to run each iteration
-# 1. Defines the general parameters
-# 2. Defines a function to set iteration-specific parameters such as demand functions parameters
-# 3. Defines the model that simulates the Spanish electricity market
+# This script defines the functions needed to run each iteration
+# 1. Defines a function to set iteration-specific parameters such as demand functions parameters
+# 2. Defines the model that simulates the Spanish electricity market
 
 # load the required libraries
 using DataFrames
@@ -24,34 +23,13 @@ using KernelDensity
 dirpath = "path/to/your/directory/"
 
 
-# ===== 1. Set general parameters =====
-# Elasticities of demand functions (domestic, imports, exports)
-# Values are lower than those usually found in the literature since otherwise the model becomes untractable
-elas_residential = 0.015 
-elas_commercial = 0.03
-elas_industrial = 0.05
-
-# creo que no definimos demand functions para imports y exports
-elas_imports = 0.03
-elas_exports = 0.03
-
-# Pumped hydro parameters
-eff_ph = 0.75
-storage_cap_ph = 15.0   # no official figure for this; estiamtes range from 10-20 GW.
-
-# Battery storage parameters
-eff_batt = 0.95         # Same for charge and discharge
-decay_batt = 0.001      # hourly self-loss ratio
-
-# General grid loss factor
-general_loss_factor = 0.015
-
-# ===== 2. Auxiliary function to define iteration-specific parameters =====
+# ===== 1. Auxiliary function to define iteration-specific parameters =====
 # Since the model is designed to be solved for many possible realizations of the future,
 # some parameters shall be computed for each iteration (since the input data will be different)
 
 function set_iteration_specific_parameters(
     projected::DataFrame,        # hourly projected data for 2030
+    technical::NamedTuple        # technical parameters shared across scenarios
     )
 
     T = nrow(projected)
@@ -60,31 +38,25 @@ function set_iteration_specific_parameters(
     projected.spot_price_eur_gwh .= ifelse.(projected.spot_price_eur_gwh .<= 0.5, 0.5, projected.spot_price_eur_gwh)
 
     # Parameters defining domestic demand functions are re-computed in each simulation
-    # (pasarlo a GWh!)
-    b_residential = elas_residential * projected.residential_demand_gwh ./ projected.spot_price_eur_gwh
-    b_commercial = elas_commercial * projected.commercial_demand_gwh ./ projected.spot_price_eur_gwh
-    b_industrial = elas_industrial * projected.industrial_demand_gwh ./ projected.spot_price_eur_gwh
+    b_residential = technical.elas_residential * projected.residential_demand_gwh ./ projected.spot_price_eur_gwh
+    b_commercial  = technical.elas_commercial  * projected.commercial_demand_gwh  ./ projected.spot_price_eur_gwh
+    b_industrial  = technical.elas_industrial  * projected.industrial_demand_gwh  ./ projected.spot_price_eur_gwh
 
     a_residential = projected.residential_demand_gwh + b_residential .* projected.spot_price_eur_gwh
-    a_commercial = projected.commercial_demand_gwh + b_commercial .* projected.spot_price_eur_gwh
-    a_industrial = projected.industrial_demand_gwh + b_industrial .* projected.spot_price_eur_gwh
+    a_commercial  = projected.commercial_demand_gwh  + b_commercial  .* projected.spot_price_eur_gwh
+    a_industrial  = projected.industrial_demand_gwh  + b_industrial  .* projected.spot_price_eur_gwh
 
-    # Hydro bundles for weekly allocation maximization are also defined within the model
+    # Hydro bundles for weekly allocation maximization
     bundle_size = 168   # number of hours in a week
-    total_hours = size(projected, 1)
-    n_bundles = div(total_hours, bundle_size)
-    
-    starts = [1 + (w - 1) * bundle_size for w in 1:n_bundles]
-    #> [1, 169, 337, 505, ...]  (initial hours every week)
+    total_hours = nrow(projected)
+    n_bundles   = div(total_hours, bundle_size)
 
+    starts  = [1 + (w - 1) * bundle_size for w in 1:n_bundles]
     bundles = [s:s + bundle_size - 1 for s in starts[1:n_bundles]]
-    #> [1:168, 169:336, 337:504, ...]  (hour intervals for every week)
 
-    # set lower and upper bound production levels per week
     hydro_min_weekly = [minimum(projected.conventional_hydro_gen_gwh[b]) for b in bundles]
     hydro_max_weekly = [maximum(projected.conventional_hydro_gen_gwh[b]) for b in bundles]
 
-    # set the same minimum and maximum hourly production values for all hours of the week
     hydro_min_hourly = zeros(Float64, total_hours)
     hydro_max_hourly = zeros(Float64, total_hours)
 
@@ -93,10 +65,9 @@ function set_iteration_specific_parameters(
         hydro_max_hourly[b] .= hydro_max_weekly[w]
     end
 
-    # total hydro production per week (which the model then allocats per hour)
     hydro_weekly_totals = [sum(projected.conventional_hydro_gen_gwh[b]) for b in bundles]
 
-    # define water availability for run of river hydro with a stylized definition of seasonality
+    # Run of river hydro: hour indices by seasonal production group
     high_prod_months     = [t for t in 1:T if projected.month[t] in (1, 3, 12)]
     med_high_prod_months = [t for t in 1:T if projected.month[t] in (2, 4, 5, 6)]
     med_low_prod_months  = [t for t in 1:T if projected.month[t] in (7, 11)]
@@ -110,7 +81,8 @@ function set_iteration_specific_parameters(
         a_industrial,  b_industrial,
         hydro_min_hourly, hydro_max_hourly, hydro_weekly_totals,
         ph_nat_in,
-        high_prod_months, med_high_prod_months, med_low_prod_months, low_prod_months
+        high_prod_months, med_high_prod_months, med_low_prod_months, low_prod_months,
+        n_bundles, bundles
     )
 
 end
@@ -126,194 +98,196 @@ function dispatch_electricity_market(
     years_solving::Float64 = 0.230137
 )
 
-    # initialize the model solver and parameters
+    # Initialize the model solver
     model = Model(Gurobi.Optimizer)
-    set_optimizer_attribute(model, "OutputFlag", 0)  
-    set_optimizer_attribute(model, "TimeLimit", 300) 
+    set_optimizer_attribute(model, "OutputFlag", 0)
+    set_optimizer_attribute(model, "TimeLimit", 300)
     set_optimizer_attribute(model, "MIPGap", 0.03)
 
-    # set indices
-    T = nrow(projected);
-    I = nrow(fixed_data);
-    S = 3 # we have 3 sectors: residential, commercial and industrial
-    C = 3 # import/export flows from/to 3 countries (POR, FRA, MOR)
+    # Set indices
+    T = nrow(projected)
+    I = nrow(technology)
+    S = 3   # residential, commercial, industrial
+    C = 3   # Portugal, France, Morocco
 
-    # define variables that the model solves
-    @variable(model, price[1:T] >= 0);
-    @variable(model, demand[1:T, 1:S] >= 0);
-    @variable(model, imports[1:T, 1:C] >= 0); 
-    @variable(model, exports[1:T, 1:C] >= 0); 
-    @variable(model, quantity[1:T, 1:I] >= 0); 
-    @variable(model, costs[1:T] >= 0); 
-    @variable(model, consumer_surplus[1:T]);
-    @variable(model, producer_revenue[1:T]); 
-    @variable(model, running_costs[1:T] >= 0);  
-    @variable(model, fuel_costs[1:T] >= 0);
-    @variable(model, emissions_costs[1:T] >= 0);
-    @variable(model, direct_emissions[1:T] >= 0);  
-    @variable(model, lifecycle_emissions[1:T] >= 0);
-    @variable(model, min_non_ren_gen[1:T] >= 0); 
-    @variable(model, ph_in[t=1:T] >= 0);
-    @variable(model, ph_out[t=1:T] >= 0);
-    @variable(model, ph_stock[1:T] >= 0);
-    @variable(model, batt_in[t=1:T] >= 0);   
-    @variable(model, batt_out[t=1:T] >= 0);   
-    @variable(model, batt_stock[1:T] >= 0); 
+    # Define variables
+    @variable(model, price[1:T] >= 0)
+    @variable(model, demand[1:T, 1:S] >= 0)
+    @variable(model, imports[1:T, 1:C] >= 0)
+    @variable(model, exports[1:T, 1:C] >= 0)
+    @variable(model, quantity[1:T, 1:I] >= 0)
+    @variable(model, costs[1:T] >= 0)
+    @variable(model, consumer_surplus[1:T])
+    @variable(model, producer_revenue[1:T])
+    @variable(model, running_costs[1:T] >= 0)
+    @variable(model, fuel_costs[1:T] >= 0)
+    @variable(model, emissions_costs[1:T] >= 0)
+    @variable(model, direct_emissions[1:T] >= 0)
+    @variable(model, lifecycle_emissions[1:T] >= 0)
+    @variable(model, min_non_ren_gen[1:T] >= 0)
+    @variable(model, ph_in[1:T] >= 0)
+    @variable(model, ph_out[1:T] >= 0)
+    @variable(model, ph_stock[1:T] >= 0)
+    @variable(model, batt_in[1:T] >= 0)
+    @variable(model, batt_out[1:T] >= 0)
+    @variable(model, batt_stock[1:T] >= 0)
 
-    # Objective function: maximize social welfare 
-    @objective(model, Max, sum(consumer_surplus[t] + producer_revenue[t] - costs[t] for t=1:T)/T);
+    # Objective: maximize social welfare
+    @objective(model, Max, sum(consumer_surplus[t] + producer_revenue[t] - costs[t] for t in 1:T) / T)
 
-    # Market Clearing: Generation + imports - exports = demand 
-    @constraint(model, balance[t=1:T], sum(quantity[t,i] for i in 1:I) + sum(imports[t,c] for c in 1:C) - sum(exports[t,c] for c in 1:C) 
-                                == (1 + loss_factor) * sum(demand[t,s] for s in 1:S) + batt_in[t] / eff_batt + ph_in[t] / eff_ph);
+    # Market clearing: generation + imports - exports = demand + storage charging
+    @constraint(model, balance[t=1:T],
+        sum(quantity[t,i] for i in 1:I) + sum(imports[t,c] for c in 1:C) - sum(exports[t,c] for c in 1:C)
+        == (1 + technical.loss_factor) * sum(demand[t,s] for s in 1:S) + batt_in[t] / technical.eff_batt + ph_in[t] / technical.eff_ph)
 
-    # Definition of consumer surplus 
-    @constraint(model, [t=1:T], 
-        consumer_surplus[t] == 
-            demand[t,1]^2/(2*b_residential[t]) 
-            + demand[t,2]^2/(2*b_commercial[t]) 
-            + demand[t,3]^2/(2*b_industrial[t]));
-
-    # Definition of producer revenue 
-    @constraint(model, [t=1:T], 
-        producer_revenue[t] == 
-            (a_residential[t] - demand[t,1]) * demand[t,1] / b_residential[t] 
-            + (a_commercial[t] - demand[t,2]) * demand[t,2] / b_commercial[t]
-            + (a_industrial[t] - demand[t,3]) * demand[t,3] / b_industrial[t]);
-
-    # Definition of costs (fixed + running)   
+    # Consumer surplus
     @constraint(model, [t=1:T],
-        costs[t] == sum((fixed_data.fixed_om_eur_gwy[i] * fixed_data.avg_cap_2024[i] * years_solving) for i in 1:I) / T + running_costs[t]); 
+        consumer_surplus[t] ==
+            demand[t,1]^2 / (2 * iteration.b_residential[t])
+            + demand[t,2]^2 / (2 * iteration.b_commercial[t])
+            + demand[t,3]^2 / (2 * iteration.b_industrial[t]))
 
-    # Components of running costs    
+    # Producer revenue
     @constraint(model, [t=1:T],
-        running_costs[t] == sum((fixed_data.var_om_eur_gwh[i] * quantity[t,i]) for i in 1:I) + fuel_costs[t] + emissions_costs[t]);    
+        producer_revenue[t] ==
+            (iteration.a_residential[t] - demand[t,1]) * demand[t,1] / iteration.b_residential[t]
+            + (iteration.a_commercial[t]  - demand[t,2]) * demand[t,2] / iteration.b_commercial[t]
+            + (iteration.a_industrial[t]  - demand[t,3]) * demand[t,3] / iteration.b_industrial[t])
 
-    # Fuel costs    
+    # Total costs (fixed + running)
     @constraint(model, [t=1:T],
-        fuel_costs[t] == projected.cost_coal_eur_gwh[t] * quantity[t, 1] / fixed_data.efficiency[1] # for coal
-                        + sum((projected.cost_gas_eur_gwh[t] * quantity[t,j] / fixed_data.efficiency[j]) for j in 2:5) # for natural gas
-                        + projected.cost_diesel_eur_gwh[t] * quantity[t, 6] / fixed_data.efficiency[6] # for diesel
-                        + projected.cost_uranium_eur_gwh[t] * quantity[t, 8] / fixed_data.efficiency[8]); # for nuclear
-    
-    # Lifecycle emissions (computed with lifecycle emissions factors – only to store the results)
-    @constraint(model, [t=1:T],
-        lifecycle_emissions[t] == sum((fixed_data.fossil_fuel[i] * quantity[t,i] * fixed_data.lifecycle_e_tco2_gwh[i]) for i in 1:I));    
+        costs[t] == sum(technology.fixed_om_eur_gwy[i] * technology.avg_cap_2024[i] * years_solving for i in 1:I) / T + running_costs[t])
 
-    # Direct emissions (computed with direct emissions factors – only to store the results)
+    # Running costs
     @constraint(model, [t=1:T],
-        direct_emissions[t] == sum((fixed_data.fossil_fuel[i] * quantity[t,i] * fixed_data.direct_e_tco2_gwh[i]) for i in 1:I));
+        running_costs[t] == sum(technology.var_om_eur_gwh[i] * quantity[t,i] for i in 1:I) + fuel_costs[t] + emissions_costs[t])
 
-    # EU ETS costs (computed with direct emissions)
+    # Fuel costs
     @constraint(model, [t=1:T],
-        emissions_costs[t] == sum((fixed_data.fossil_fuel[i] * projected.eu_ets_price_eur_tco2[t] * quantity[t,i] * fixed_data.direct_e_tco2_gwh[i]) for i in 1:I));        
-        
-    # Definition of demand
-    @constraint(model, [t=1:T], demand[t,1] == a_residential[t] - b_residential[t] * price[t]);
-    @constraint(model, [t=1:T], demand[t,2] == a_commercial[t] - b_commercial[t] * price[t]);
-    @constraint(model, [t=1:T], demand[t,3] == a_industrial[t] - b_industrial[t] * price[t]);
-    
-    # Definition of imports (fixed to observed values)    
-    @constraint(model, [t=1:T], imports[t,1] == projected.imports_France_gwh[t]);            
-    @constraint(model, [t=1:T], imports[t,2] == projected.imports_Portugal_gwh[t]);           
-    @constraint(model, [t=1:T], imports[t,3] == projected.imports_Morocco_gwh[t]);
+        fuel_costs[t] ==
+            projected.cost_coal_eur_gwh[t]    * quantity[t,1] / technology.efficiency[1]   # coal
+            + sum(projected.cost_gas_eur_gwh[t] * quantity[t,j] / technology.efficiency[j] for j in 2:5)  # natural gas
+            + projected.cost_diesel_eur_gwh[t]  * quantity[t,6] / technology.efficiency[6]  # diesel
+            + projected.cost_uranium_eur_gwh[t] * quantity[t,8] / technology.efficiency[8]) # nuclear
 
-    # Definition of exports (fixed to observed values)    
-    @constraint(model, [t=1:T], exports[t,1] == projected.exports_France_gwh[t]);           
-    @constraint(model, [t=1:T], exports[t,2] == projected.exports_Portugal_gwh[t]);         
-    @constraint(model, [t=1:T], exports[t,3] == projected.exports_Morocco_gwh[t]);
-            
-    # Output constraints 
-    # NON-RENEWABLES: specific modeling for Nuclear and calibration of ramping costs for the thermal plants
+    # Lifecycle emissions (stored only, not used in objective)
+    @constraint(model, [t=1:T],
+        lifecycle_emissions[t] == sum(technology.fossil_fuel[i] * quantity[t,i] * technology.lifecycle_e_tco2_gwh[i] for i in 1:I))
+
+    # Direct emissions (stored only, not used in objective)
+    @constraint(model, [t=1:T],
+        direct_emissions[t] == sum(technology.fossil_fuel[i] * quantity[t,i] * technology.direct_e_tco2_gwh[i] for i in 1:I))
+
+    # EU ETS costs
+    @constraint(model, [t=1:T],
+        emissions_costs[t] == sum(technology.fossil_fuel[i] * projected.eu_ets_price_eur_tco2[t] * quantity[t,i] * technology.direct_e_tco2_gwh[i] for i in 1:I))
+
+    # Demand functions
+    @constraint(model, [t=1:T], demand[t,1] == iteration.a_residential[t] - iteration.b_residential[t] * price[t])
+    @constraint(model, [t=1:T], demand[t,2] == iteration.a_commercial[t]  - iteration._commercial[t]   * price[t])
+    @constraint(model, [t=1:T], demand[t,3] == iteration.a_industrial[t]  - iteration.b_industrial[t]  * price[t])
+
+    # Imports and exports (fixed to projected values)
+    @constraint(model, [t=1:T], imports[t,1] == projected.imports_France_gwh[t])
+    @constraint(model, [t=1:T], imports[t,2] == projected.imports_Portugal_gwh[t])
+    @constraint(model, [t=1:T], imports[t,3] == projected.imports_Morocco_gwh[t])
+    @constraint(model, [t=1:T], exports[t,1] == projected.exports_France_gwh[t])
+    @constraint(model, [t=1:T], exports[t,2] == projected.exports_Portugal_gwh[t])
+    @constraint(model, [t=1:T], exports[t,3] == projected.exports_Morocco_gwh[t])
+
+    # ----- Output constraints -----
+
     # Coal
-    @constraint(model, [t=1:T], quantity[t,1] >= 0.15 * projected.coal_cap_gw[t]);
-    @constraint(model, [t=1:T], quantity[t,1] <= 0.65 * projected.coal_cap_gw[t]); 
-    @constraint(model, [t=2:T], quantity[t,1] - quantity[t-1,1] >= -0.05 * projected.coal_cap_gw[t]);
-    @constraint(model, [t=2:T], quantity[t,1] - quantity[t-1,1] <= +0.05 * projected.coal_cap_gw[t]);
- 
-    # Combined cycle gas
-    @constraint(model, [t=1:T], quantity[t,2] >= 0.05 * projected.combined_cycle_cap_gw[t]);
-    @constraint(model, [t=1:T], quantity[t,2] <= projected.combined_cycle_cap_gw[t]);
-    @constraint(model, [t=2:T], quantity[t,2] - quantity[t-1,2] >= -0.25 * projected.combined_cycle_cap_gw[t]);
-    @constraint(model, [t=2:T], quantity[t,2] - quantity[t-1,2] <= +0.25 * projected.combined_cycle_cap_gw[t]); 
+    @constraint(model, [t=1:T], quantity[t,1] >= scenario.coal_min * projected.coal_cap_gw[t])
+    @constraint(model, [t=1:T], quantity[t,1] <= scenario.coal_max * projected.coal_cap_gw[t])
+    @constraint(model, [t=2:T], quantity[t,1] - quantity[t-1,1] >= -scenario.coal_ramp * projected.coal_cap_gw[t])
+    @constraint(model, [t=2:T], quantity[t,1] - quantity[t-1,1] <= +scenario.coal_ramp * projected.coal_cap_gw[t])
 
-    # Other gas
-    @constraint(model, [t=1:T], quantity[t,3] <= projected.gas_turbine_cap_gw[t]);
-    @constraint(model, [t=1:T], quantity[t,4] <= projected.vapor_turbine_cap_gw[t]);
+    # Combined cycle gas
+    @constraint(model, [t=1:T], quantity[t,2] >= scenario.ccgt_min * projected.combined_cycle_cap_gw[t])
+    @constraint(model, [t=1:T], quantity[t,2] <= scenario.ccgt_max * projected.combined_cycle_cap_gw[t])
+    @constraint(model, [t=2:T], quantity[t,2] - quantity[t-1,2] >= -scenario.ccgt_ramp * projected.combined_cycle_cap_gw[t])
+    @constraint(model, [t=2:T], quantity[t,2] - quantity[t-1,2] <= +scenario.ccgt_ramp * projected.combined_cycle_cap_gw[t])
+
+    # Other gas 
+    @constraint(model, [t=1:T], quantity[t,3] <= projected.gas_turbine_cap_gw[t])
+    @constraint(model, [t=1:T], quantity[t,4] <= projected.vapor_turbine_cap_gw[t])
 
     # Cogeneration (most likely gas)
-    @constraint(model, [t=1:T], quantity[t,5] >= 0.15 * projected.cogeneration_cap_gw[t]);
-    @constraint(model, [t=1:T], quantity[t,5] <= 0.6 * projected.cogeneration_cap_gw[t]);
-    @constraint(model, [t=2:T], quantity[t,5] - quantity[t-1,5] >= -0.1 * projected.cogeneration_cap_gw[t]);
-    @constraint(model, [t=2:T], quantity[t,5] - quantity[t-1,5] <= +0.1 * projected.cogeneration_cap_gw[t]);
-    
-    # Oil
-    @constraint(model, [t=1:T], quantity[t,6] >= 0.3 * projected.diesel_cap_gw[t]); # Minimum production in the Canary islands
-    @constraint(model, [t=1:T], quantity[t,6] <= projected.diesel_cap_gw[t]);
+    @constraint(model, [t=1:T], quantity[t,5] >= scenario.cogen_min * projected.cogeneration_cap_gw[t])
+    @constraint(model, [t=1:T], quantity[t,5] <= scenario.cogen_max * projected.cogeneration_cap_gw[t])
+    @constraint(model, [t=2:T], quantity[t,5] - quantity[t-1,5] >= -scenario.cogen_ramp * projected.cogeneration_cap_gw[t])
+    @constraint(model, [t=2:T], quantity[t,5] - quantity[t-1,5] <= +scenario.cogen_ramp * projected.cogeneration_cap_gw[t])
+
+    # Oil (minimum reflects Canary Islands baseload)
+    @constraint(model, [t=1:T], quantity[t,6] >= scenario.diesel_min * projected.diesel_cap_gw[t])
+    @constraint(model, [t=1:T], quantity[t,6] <= projected.diesel_cap_gw[t])
 
     # Non-renewable waste
-    @constraint(model, [t=1:T], quantity[t,7] <= 0.4 * projected.nonrenewable_waste_cap_gw[t]);
-    @constraint(model, [t=2:T], quantity[t,7] - quantity[t-1,7] >= -0.01 * projected.nonrenewable_waste_cap_gw[t]);
-    @constraint(model, [t=2:T], quantity[t,7] - quantity[t-1,7] <= +0.01 * projected.nonrenewable_waste_cap_gw[t]);  
-    
-    # Nuclear (set equal to the self-reported availability)
-    @constraint(model, [t=1:T], quantity[t,8] == projected.nuclear_cap_gw[t] * projected.nuclear_cap_factor[t]);
+    @constraint(model, [t=1:T], quantity[t,7] <= scenario.non_ren_waste_max * projected.nonrenewable_waste_cap_gw[t])
+    @constraint(model, [t=2:T], quantity[t,7] - quantity[t-1,7] >= -scenario.non_ren_waste_ramp * projected.nonrenewable_waste_cap_gw[t])
+    @constraint(model, [t=2:T], quantity[t,7] - quantity[t-1,7] <= +scenario.non_ren_waste_ramp * projected.nonrenewable_waste_cap_gw[t])
 
-    # 
-    @constraint(model, [t=1:T], min_non_ren_gen[t] == 
-                0.15 * projected.coal_cap_gw[t] 
-                + 0.05 * projected.combined_cycle_cap_gw[t] 
-                + 0.15 * projected.cogeneration_cap_gw[t]
-                + 0.3 * projected.diesel_cap_gw[t]
-                + 0.4 * projected.nonrenewable_waste_cap_gw[t]
-                + projected.nuclear_cap_gw[t] * projected.nuclear_cap_factor[t]);
+    # Nuclear (fixed to self-reported availability)
+    @constraint(model, [t=1:T], quantity[t,8] == projected.nuclear_cap_gw[t] * projected.nuclear_cap_factor[t])
 
-    # RENEWABLES:
-    # Hydro: generation constraints based on thr weekly real generation
-    @constraint(model, [t=1:T], quantity[t,9] >= hydro_min_hourly[t]);
-    @constraint(model, [t=1:T], quantity[t,9] <= hydro_max_hourly[t]);
-    @constraint(model, [w in 1:n_bundles], sum(quantity[t, 9] for t in bundles[w]) <= hydro_weekly_totals[w]);
-    @constraint(model, [t=2:T], quantity[t,9] - quantity[t-1,9] >= -0.1 * projected.conventional_hydro_cap_gw[t]);
-    @constraint(model, [t=2:T], quantity[t,9] - quantity[t-1,9] <= +0.1 * projected.conventional_hydro_cap_gw[t]);    
+    # Minimum non-renewable generation (used to track system flexibility floor)
+    @constraint(model, [t=1:T], min_non_ren_gen[t] ==
+        scenario.coal_min             * projected.coal_cap_gw[t]
+        + scenario.ccgt_min           * projected.combined_cycle_cap_gw[t]
+        + scenario.cogen_min          * projected.cogeneration_cap_gw[t]
+        + scenario.diesel_min         * projected.diesel_cap_gw[t]
+        + scenario.nonren_waste_min   * projected.nonrenewable_waste_cap_gw[t]
+        + projected.nuclear_cap_gw[t] * projected.nuclear_cap_factor[t])
 
-    # Run of river hydro (seasonality constraints linked to monthly historical production)
-    @constraint(model, [t=2:T], quantity[t,10] - quantity[t-1,10] >= -0.2 * projected.run_of_river_hydro_cap_gw[t]);
-    @constraint(model, [t=2:T], quantity[t,10] - quantity[t-1,10] <= +0.2 * projected.run_of_river_hydro_cap_gw[t]);
-    @constraint(model, [t in iteration.high_prod_months], scenario.ror_lo_high * projected.run_of_river_hydro_cap_gw[t] <= quantity[t,10] <= scenario.ror_hi_high * projected.run_of_river_hydro_cap_gw[t])
+    # Conventional hydro (weekly allocation)
+    @constraint(model, [t=1:T], quantity[t,9] >= iteration.hydro_min_hourly[t])
+    @constraint(model, [t=1:T], quantity[t,9] <= iteration.hydro_max_hourly[t])
+    @constraint(model, [w in 1:iteration.n_bundles], sum(quantity[t,9] for t in iteration.bundles[w]) <= iteration.hydro_weekly_totals[w])
+    @constraint(model, [t=2:T], quantity[t,9] - quantity[t-1,9] >= -technical.conv_hydro_ramp * projected.conventional_hydro_cap_gw[t])
+    @constraint(model, [t=2:T], quantity[t,9] - quantity[t-1,9] <= +technical.conv_hydro_ramp * projected.conventional_hydro_cap_gw[t])
 
-    # Pumped hydro (works as a battery)
-    @constraint(model, ph_stock[1] == 0.5 * storage_cap_ph); # Initial stock of pumped hydro is 50% of the capacity
-    @constraint(model, [t=2:T], ph_stock[t] <= storage_cap_ph);
-    @constraint(model, [t=2:T], ph_stock[t] == ph_stock[t-1] + eff_ph * ph_in[t-1] - ph_out[t-1] + ph_nat_in[t-1]);
-    @constraint(model, [t=1:T], ph_out[t] <= 0.75 * projected.pumped_hydro_cap_gw[t]);
-    @constraint(model, [t=1:T], ph_in[t] <= projected.pumped_hydro_cap_gw[t]);
-    @constraint(model, [t=1:T], quantity[t,11] == ph_out[t]);
+    # Run of river hydro (seasonal availability bounds)
+    @constraint(model, [t in iteration.high_prod_months],     scenario.ror_lo_high     * projected.run_of_river_hydro_cap_gw[t] <= quantity[t,10] <= scenario.ror_hi_high     * projected.run_of_river_hydro_cap_gw[t])
+    @constraint(model, [t in iteration.med_high_prod_months], scenario.ror_lo_med_high * projected.run_of_river_hydro_cap_gw[t] <= quantity[t,10] <= scenario.ror_hi_med_high * projected.run_of_river_hydro_cap_gw[t])
+    @constraint(model, [t in iteration.med_low_prod_months],  scenario.ror_lo_med_low  * projected.run_of_river_hydro_cap_gw[t] <= quantity[t,10] <= scenario.ror_hi_med_low  * projected.run_of_river_hydro_cap_gw[t])
+    @constraint(model, [t in iteration.low_prod_months],      scenario.ror_lo_low      * projected.run_of_river_hydro_cap_gw[t] <= quantity[t,10] <= scenario.ror_hi_low      * projected.run_of_river_hydro_cap_gw[t])
+    @constraint(model, [t=2:T], quantity[t,10] - quantity[t-1,10] >= -technical.ror_ramp * projected.run_of_river_hydro_cap_gw[t])
+    @constraint(model, [t=2:T], quantity[t,10] - quantity[t-1,10] <= +technical.ror_ramp * projected.run_of_river_hydro_cap_gw[t])
 
-    # Solar PV, thermal and wind have capacity factors relative to availability
-    @constraint(model, [t=1:T], quantity[t,12] <= projected.solar_pv_cap_gw[t] * projected.solar_pv_cap_factor[t]);
-    @constraint(model, [t=1:T], quantity[t,13] <= projected.solar_thermal_cap_gw[t] * projected.solar_thermal_cap_factor[t]); 
-    @constraint(model, [t=1:T], quantity[t,14] <= projected.wind_cap_gw[t] * projected.wind_cap_factor[t]);
+    # Pumped hydro
+    @constraint(model, ph_stock[1] == 0.5 * technical.pumped_hydro_cap_gw)
+    @constraint(model, [t=2:T], ph_stock[t] <= technical.pumped_hydro_cap_gw)
+    @constraint(model, [t=2:T], ph_stock[t] == ph_stock[t-1] + technical.eff_ph * ph_in[t-1] - ph_out[t-1] + iteration.ph_nat_in[t-1])
+    @constraint(model, [t=1:T], ph_out[t] <= technical.ph_out_max * projected.pumped_hydro_cap_gw[t])
+    @constraint(model, [t=1:T], ph_in[t]  <= projected.pumped_hydro_cap_gw[t])
+    @constraint(model, [t=1:T], quantity[t,11] == ph_out[t])
 
-    # Other renewables have basic capacity constraints
-    @constraint(model, [t=1:T], quantity[t,15] >= 0.25 * projected.other_renewable_cap_gw[t]);
-    @constraint(model, [t=1:T], quantity[t,15] <= 0.6 * projected.other_renewable_cap_gw[t]);
-    @constraint(model, [t=2:T], quantity[t,15] - quantity[t-1,15] >= -0.05 * projected.other_renewable_cap_gw[t]);
-    @constraint(model, [t=2:T], quantity[t,15] - quantity[t-1,15] <= +0.05 * projected.other_renewable_cap_gw[t]); 
+    # Solar PV, solar thermal, wind (capacity factor bounds)
+    @constraint(model, [t=1:T], quantity[t,12] <= projected.solar_pv_cap_gw[t]      * projected.solar_pv_cap_factor[t])
+    @constraint(model, [t=1:T], quantity[t,13] <= projected.solar_thermal_cap_gw[t] * projected.solar_thermal_cap_factor[t])
+    @constraint(model, [t=1:T], quantity[t,14] <= projected.wind_cap_gw[t]          * projected.wind_cap_factor[t])
+
+    # Other renewables
+    @constraint(model, [t=1:T], quantity[t,15] >= scenario.other_ren_min * projected.other_renewable_cap_gw[t])
+    @constraint(model, [t=1:T], quantity[t,15] <= scenario.other_ren_max * projected.other_renewable_cap_gw[t])
+    @constraint(model, [t=2:T], quantity[t,15] - quantity[t-1,15] >= -scenario.other_ren_ramp * projected.other_renewable_cap_gw[t])
+    @constraint(model, [t=2:T], quantity[t,15] - quantity[t-1,15] <= +scenario.other_ren_ramp * projected.other_renewable_cap_gw[t])
 
     # Renewable waste
-    @constraint(model, [t=1:T], quantity[t,16] <= 0.65 * projected.renewable_waste_cap_gw[t]); 
-    @constraint(model, [t=2:T], quantity[t,16] - quantity[t-1,16] >= -0.05 * projected.renewable_waste_cap_gw[t]);
-    @constraint(model, [t=2:T], quantity[t,16] - quantity[t-1,16] <= +0.05 * projected.renewable_waste_cap_gw[t]);  
-    
-    # Batteries (modeled as 4h batteries)
-    @constraint(model, batt_stock[1] == 0.5 * projected.batteries_cap_gw[1]);
-    @constraint(model, [t=2:T], batt_stock[t] <= projected.batteries_cap_gw[t]);
-    @constraint(model, [t=2:T], batt_stock[t] == (1 - decay_batt) * batt_stock[t-1] + eff_batt * batt_in[t-1] - batt_out[t-1] / eff_batt);
-    @constraint(model, [t=1:T], batt_out[t] <= 0.25 * projected.batteries_cap_gw[t]);
-    @constraint(model, [t=1:T], batt_in[t] <= 0.25 * projected.batteries_cap_gw[t]);
-    @constraint(model, [t=1:T], quantity[t,17] == batt_out[t]); 
-     
-    # Solving the model
+    @constraint(model, [t=1:T], quantity[t,16] <= scenario.ren_waste_max * projected.renewable_waste_cap_gw[t])
+    @constraint(model, [t=2:T], quantity[t,16] - quantity[t-1,16] >= -scenario.ren_waste_ramp * projected.renewable_waste_cap_gw[t])
+    @constraint(model, [t=2:T], quantity[t,16] - quantity[t-1,16] <= +scenario.ren_waste_ramp * projected.renewable_waste_cap_gw[t])
+
+    # Batteries (4h duration)
+    @constraint(model, batt_stock[1] == 0.5 * projected.batteries_cap_gw[1])
+    @constraint(model, [t=2:T], batt_stock[t] <= projected.batteries_cap_gw[t])
+    @constraint(model, [t=2:T], batt_stock[t] == (1 - technical.decay_batt) * batt_stock[t-1] + technical.eff_batt * batt_in[t-1] - batt_out[t-1] / technical.eff_batt)
+    @constraint(model, [t=1:T], batt_out[t] <= technical.batt_duration * projected.batteries_cap_gw[t])
+    @constraint(model, [t=1:T], batt_in[t]  <= technical.batt_duration * projected.batteries_cap_gw[t])
+    @constraint(model, [t=1:T], quantity[t,17] == batt_out[t])
+
+    # Solve
     optimize!(model)
     status = JuMP.termination_status(model);
 
