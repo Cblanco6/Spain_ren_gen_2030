@@ -124,7 +124,7 @@ function dispatch_electricity_market(
     # Market clearing: generation + imports - exports = demand + storage charging
     @constraint(model, balance[t=1:T],
         sum(quantity[t,i] for i in 1:I) + sum(imports[t,c] for c in 1:C) - sum(exports[t,c] for c in 1:C)
-        == (1 + technical.loss_factor) * sum(demand[t,s] for s in 1:S) + batt_in[t] / technical.eff_batt + ph_in[t] / technical.eff_ph)
+        == (1 + technical.grid_loss_factor) * sum(demand[t,s] for s in 1:S) + batt_in[t] / technical.eff_batt + ph_in[t] / technical.eff_ph)-
 
     # Consumer surplus
     @constraint(model, [t=1:T],
@@ -142,7 +142,7 @@ function dispatch_electricity_market(
 
     # Total costs (fixed + running)
     @constraint(model, [t=1:T],
-        costs[t] == sum(technology.fixed_om_eur_gwy[i] * technology.avg_cap_2024[i] * years_solving for i in 1:I) / T + running_costs[t])
+        costs[t] == sum(technology.fixed_om_eur_gwy[i] * technology.avg_cap_year[i] * years_solving for i in 1:I) / T + running_costs[t])
 
     # Running costs
     @constraint(model, [t=1:T],
@@ -151,18 +151,18 @@ function dispatch_electricity_market(
     # Fuel costs
     @constraint(model, [t=1:T],
         fuel_costs[t] ==
-            projected.cost_coal_eur_gwh[t]      * quantity[t,1] / technology.efficiency[1]   # coal
+            projected.cost_coal_eur_gwh[t]      * quantity[t,1] / technology.efficiency[1]                # coal
             + sum(projected.cost_gas_eur_gwh[t] * quantity[t,j] / technology.efficiency[j] for j in 2:5)  # natural gas
-            + projected.cost_diesel_eur_gwh[t]  * quantity[t,6] / technology.efficiency[6]  # diesel
-            + projected.cost_uranium_eur_gwh[t] * quantity[t,8] / technology.efficiency[8]) # nuclear
-
-    # Lifecycle emissions (stored only, not used in objective)
-    @constraint(model, [t=1:T],
-        lifecycle_emissions[t] == sum(technology.fossil_fuel[i] * quantity[t,i] * technology.lifecycle_e_tco2_gwh[i] for i in 1:I))
+            + projected.cost_diesel_eur_gwh[t]  * quantity[t,6] / technology.efficiency[6]                # diesel
+            + projected.cost_uranium_eur_gwh[t] * quantity[t,8] / technology.efficiency[8])               # nuclear
 
     # Direct emissions (stored only, not used in objective)
     @constraint(model, [t=1:T],
         direct_emissions[t] == sum(technology.fossil_fuel[i] * quantity[t,i] * technology.direct_e_tco2_gwh[i] for i in 1:I))
+
+    # Lifecycle emissions (stored only, not used in objective)
+    @constraint(model, [t=1:T],
+        lifecycle_emissions[t] == sum(technology.fossil_fuel[i] * quantity[t,i] * technology.lifecycle_e_tco2_gwh[i] for i in 1:I))
 
     # EU ETS costs
     @constraint(model, [t=1:T],
@@ -195,7 +195,7 @@ function dispatch_electricity_market(
     @constraint(model, [t=2:T], quantity[t,2] - quantity[t-1,2] >= -scenario.ccgt_ramp * projected.combined_cycle_cap_gw[t])
     @constraint(model, [t=2:T], quantity[t,2] - quantity[t-1,2] <= +scenario.ccgt_ramp * projected.combined_cycle_cap_gw[t])
 
-    # Other gas 
+    # Other gas (simple modeling, not relevant)
     @constraint(model, [t=1:T], quantity[t,3] <= projected.gas_turbine_cap_gw[t])
     @constraint(model, [t=1:T], quantity[t,4] <= projected.vapor_turbine_cap_gw[t])
 
@@ -205,7 +205,7 @@ function dispatch_electricity_market(
     @constraint(model, [t=2:T], quantity[t,5] - quantity[t-1,5] >= -scenario.cogen_ramp * projected.cogeneration_cap_gw[t])
     @constraint(model, [t=2:T], quantity[t,5] - quantity[t-1,5] <= +scenario.cogen_ramp * projected.cogeneration_cap_gw[t])
 
-    # Oil (minimum reflects Canary Islands baseload)
+    # Oil (minimum constraint reflects Canary Islands baseload)
     @constraint(model, [t=1:T], quantity[t,6] >= scenario.diesel_min * projected.diesel_cap_gw[t])
     @constraint(model, [t=1:T], quantity[t,6] <= projected.diesel_cap_gw[t])
 
