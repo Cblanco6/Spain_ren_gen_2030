@@ -1,5 +1,5 @@
-scenario;coal_min;coal_max;coal_ramp;ccgt_min;ccgt_max;ccgt_ramp;cogen_min;cogen_max;cogen_ramp;diesel_min;non_ren_waste_max;non_ren_waste_ramp;hydro_anomaly;ror_anomaly;ph_nat_in_anomaly;other_ren_min;other_ren_max;other_ren_ramp;ren_waste_min;ren_waste_max;ren_waste_ramp
-baseline;0.15;0.65;0.05;0.05;1.0;0.25;0.15;0.6;0.1;0.3;0.4;0.01;1.0;1.0;1.0;0.25;0.6;0.05;0;0.65;0.05
-nuclear;0.15;0.65;0.05;0.05;1.0;0.25;0.15;0.6;0.1;0.3;0.4;0.01;1.0;1.0;1.0;0.25;0.6;0.05;0;0.65;0.05
-optimistic;0.15;0.65;0.05;0.02;1.0;0.25;0.05;0.65;0.1;0.15;0.4;0.01;1.0;1.0;1.0;0.25;0.65;0.05;0;0.7;0.05
-climate change;0.15;0.65;0.05;0.05;1.0;0.25;0.15;0.6;0.1;0.3;0.4;0.01;0.8;0.8;0.8;0.25;0.65;0.05;0;0.7;0.05
+scenario,elas_anomaly,min_ccgas_gen_anomaly,min_cogen_gen_anomaly,min_oil_gen_anomaly,hydro_anomaly,ph_eff_anomaly,batt_eff_anomaly,other_ren_max_anomaly,ren_waste_max_anomaly
+baseline,1.000,1.000,1.000,1.000,1.0,1.000,1.000,1.000,1.000
+nuclear,1.000,1.000,1.000,1.000,1.0,1.000,1.000,1.000,1.000
+optimistic,2.000,0.500,0.500,0.500,1.0,1.025,1.025,1.200,1.200
+climate change,1.000,1.000,1.000,1.000,0.8,1.000,1.000,1.000,1.000
