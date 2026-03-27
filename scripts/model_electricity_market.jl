@@ -125,7 +125,10 @@ function dispatch_electricity_market(
     # Market clearing: generation + imports - exports = demand + storage charging
     @constraint(model, balance[t=1:T],
         sum(quantity[t,i] for i in 1:I) + sum(imports[t,c] for c in 1:C) - sum(exports[t,c] for c in 1:C)
-        == (1 + technical.grid_loss_factor) * sum(demand[t,s] for s in 1:S) + batt_in[t] / technical.eff_batt + ph_in[t] / technical.eff_ph)-
+        == (1 + technical.grid_loss_factor) * sum(demand[t,s] for s in 1:S) 
+            + batt_in[t] / sqrt(technical.batt_roundtrip_eff * scenario.batt_roundtrip_eff_anomaly)
+            + ph_in[t] / sqrt(technical.ph_roundtrip_eff * scenario.ph_roundtrip_eff_anomaly))
+
 
     # Consumer surplus
     @constraint(model, [t=1:T],
@@ -243,13 +246,16 @@ function dispatch_electricity_market(
     @constraint(model, [t=2:T], quantity[t,10] - quantity[t-1,10] <= +technical.ror_ramp * projected.run_of_river_hydro_cap_gw[t])
 
     # Pumped hydro
-    @constraint(model, ph_stock[1] == 0.5 * technical.ph_storage_cap_gw)
-    @constraint(model, [t=2:T], ph_stock[t] <= technical.ph_storage_cap_gw)
-    # ph_stock[t] == ph_stock[t-1] + sqrt(technical.ph_eff) * ph_in[t-1] - ph_out[t-1] / sqrt(technical.ph_eff) + ph_nat_in[t-1]
-    @constraint(model, [t=2:T], ph_stock[t] == ph_stock[t-1] + technical.ph_eff * ph_in[t-1] - ph_out[t-1] + iteration.ph_nat_in[t-1] * scenario.hydro_anomaly)
-    @constraint(model, [t=1:T], ph_out[t] <= technical.ph_out_max * projected.pumped_hydro_cap_gw[t])
+    @constraint(model, ph_stock[1] == rand(Uniform(0.3, 0.7)) * technical.ph_storage_cap_gwh)
+    @constraint(model, [t=2:T], ph_stock[t] <= technical.ph_storage_cap_gwh)
+    @constraint(model, [t=2:T], 
+        ph_stock[t] == ph_stock[t-1] 
+        + sqrt(technical.ph_roundtrip_eff * scenario.ph_roundtrip_eff_anomaly) * ph_in[t-1] 
+        - ph_out[t-1] / sqrt(technical.ph_roundtrip_eff * scenario.ph_roundtrip_eff_anomaly) 
+        + iteration.ph_nat_in[t-1] * scenario.hydro_anomaly)
+    @constraint(model, [t=1:T], ph_out[t] <= projected.pumped_hydro_cap_gw[t])
     @constraint(model, [t=1:T], ph_in[t]  <= projected.pumped_hydro_cap_gw[t])
-    @constraint(model, [t=1:T], quantity[t,11] == ph_out[t])
+    @constraint(model, [t=1:T], quantity[t,11] == sqrt(technical.ph_roundtrip_eff * scenario.ph_roundtrip_eff_anomaly) * ph_out[t]) 
 
     # Solar PV, solar thermal, wind (capacity factor bounds)
     @constraint(model, [t=1:T], quantity[t,12] <= projected.solar_pv_cap_gw[t]      * projected.solar_pv_cap_factor[t])
@@ -269,13 +275,16 @@ function dispatch_electricity_market(
     @constraint(model, [t=2:T], quantity[t,16] - quantity[t-1,16] <= +technical.ren_waste_ramp * projected.renewable_waste_cap_gw[t])
 
     # Batteries (4h duration)
-    @constraint(model, batt_stock[1] == 0.5 * projected.batteries_cap_gw[1])
-    @constraint(model, [t=2:T], batt_stock[t] <= projected.batteries_cap_gw[t])
-    @constraint(model, [t=2:T], batt_stock[t] == (1 - technical.batt_decay) * batt_stock[t-1] + scenario.batt_eff_anomaly * technical.batt_eff * batt_in[t-1] - batt_out[t-1] / (scenario.batt_eff_anomaly * technical.batt_eff))
-    @constraint(model, [t=1:T], batt_out[t] <= technical.batt_duration * projected.batteries_cap_gw[t])
-    @constraint(model, [t=1:T], batt_in[t]  <= technical.batt_duration * projected.batteries_cap_gw[t])
-    @constraint(model, [t=1:T], quantity[t,17] == batt_out[t])
-
+    @constraint(model, batt_stock[1] == rand(Uniform(0.3, 0.7)) * technical.batt_duration * projected.batteries_cap_gw[1])
+    @constraint(model, [t=2:T], batt_stock[t] <= technical.batt_duration * projected.batteries_cap_gw[t])
+    @constraint(model, [t=2:T], 
+        batt_stock[t] == (1 - technical.batt_decay) * batt_stock[t-1] 
+        + sqrt(technical.batt_roundtrip_eff * scenario.batt_roundtrip_eff_anomaly) * batt_in[t-1] 
+        - batt_out[t-1] / sqrt(technical.batt_roundtrip_eff * scenario.batt_roundtrip_eff_anomaly))
+    @constraint(model, [t=1:T], batt_out[t] <= projected.batteries_cap_gw[t])
+    @constraint(model, [t=1:T], batt_in[t]  <= projected.batteries_cap_gw[t])
+    @constraint(model, [t=1:T], quantity[t,17] == sqrt(technical.batt_roundtrip_eff * scenario.batt_roundtrip_eff_anomaly) * batt_out[t])
+    
     # Solve
     optimize!(model)
     status = JuMP.termination_status(model);
