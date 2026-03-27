@@ -60,8 +60,6 @@ function set_iteration_specific_parameters(
     hours_med_low_ror  = [t for t in 1:T if projected.month[t] in (7, 11)]
     hours_low_ror      = [t for t in 1:T if projected.month[t] in (8, 9, 10)]
 
-    ph_nat_in = projected.eff_75_Average # este nomrbe habría que cambiarlo...
-
     return (;
         a_residential, b_residential,
         a_commercial,  b_commercial,
@@ -251,8 +249,8 @@ function dispatch_electricity_market(
     @constraint(model, [t=2:T], 
         ph_stock[t] == ph_stock[t-1] 
         + sqrt(technical.ph_roundtrip_eff * scenario.ph_roundtrip_eff_anomaly) * ph_in[t-1] 
-        - ph_out[t-1] / sqrt(technical.ph_roundtrip_eff * scenario.ph_roundtrip_eff_anomaly) 
-        + iteration.ph_nat_in[t-1] * scenario.hydro_anomaly)
+        - ph_out[t-1] / sqrt(technical.ph_roundtrip_eff * scenario.ph_roundtrip_eff_anomaly))
+         
     @constraint(model, [t=1:T], ph_out[t] <= projected.pumped_hydro_cap_gw[t])
     @constraint(model, [t=1:T], ph_in[t]  <= projected.pumped_hydro_cap_gw[t])
     @constraint(model, [t=1:T], quantity[t,11] == sqrt(technical.ph_roundtrip_eff * scenario.ph_roundtrip_eff_anomaly) * ph_out[t]) 
