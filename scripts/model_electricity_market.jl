@@ -194,7 +194,7 @@ function dispatch_electricity_market(
     @constraint(model, [t=2:T], quantity[t,1] - quantity[t-1,1] <= +technical.coal_ramp * projected.coal_cap_gw[t])
 
     # Combined cycle gas
-    @constraint(model, [t=1:T], quantity[t,2] >= technical.ccgt_min * projected.combined_cycle_cap_gw[t] * scenario.min_thermal_gen_anomaly)
+    @constraint(model, [t=1:T], quantity[t,2] >= technical.ccgt_min * projected.combined_cycle_cap_gw[t] * scenario.min_ccgas_gen_anomaly)
     @constraint(model, [t=1:T], quantity[t,2] <= technical.ccgt_max * projected.combined_cycle_cap_gw[t])
     @constraint(model, [t=2:T], quantity[t,2] - quantity[t-1,2] >= -technical.ccgt_ramp * projected.combined_cycle_cap_gw[t])
     @constraint(model, [t=2:T], quantity[t,2] - quantity[t-1,2] <= +technical.ccgt_ramp * projected.combined_cycle_cap_gw[t])
@@ -204,13 +204,13 @@ function dispatch_electricity_market(
     @constraint(model, [t=1:T], quantity[t,4] <= projected.vapor_turbine_cap_gw[t])
 
     # Cogeneration (most likely gas)
-    @constraint(model, [t=1:T], quantity[t,5] >= technical.cogen_min * projected.cogeneration_cap_gw[t] * scenario.min_thermal_gen_anomaly)
+    @constraint(model, [t=1:T], quantity[t,5] >= technical.cogen_min * projected.cogeneration_cap_gw[t] * scenario.min_cogen_gen_anomaly)
     @constraint(model, [t=1:T], quantity[t,5] <= technical.cogen_max * projected.cogeneration_cap_gw[t])
     @constraint(model, [t=2:T], quantity[t,5] - quantity[t-1,5] >= -technical.cogen_ramp * projected.cogeneration_cap_gw[t])
     @constraint(model, [t=2:T], quantity[t,5] - quantity[t-1,5] <= +technical.cogen_ramp * projected.cogeneration_cap_gw[t])
 
     # Oil (minimum constraint reflects Canary Islands baseload)
-    @constraint(model, [t=1:T], quantity[t,6] >= technical.diesel_min * projected.diesel_cap_gw[t] * scenario.min_thermal_gen_anomaly)
+    @constraint(model, [t=1:T], quantity[t,6] >= technical.diesel_min * projected.diesel_cap_gw[t] * scenario.min_oil_gen_anomaly)
     @constraint(model, [t=1:T], quantity[t,6] <= projected.diesel_cap_gw[t])
 
     # Non-renewable waste
@@ -224,9 +224,9 @@ function dispatch_electricity_market(
     # Minimum non-renewable generation (used to track system flexibility floor)
     @constraint(model, [t=1:T], min_non_ren_gen[t] ==
         technical.coal_min             * projected.coal_cap_gw[t]
-        + technical.ccgt_min           * projected.combined_cycle_cap_gw[t]     * scenario.min_thermal_gen_anomaly
-        + technical.cogen_min          * projected.cogeneration_cap_gw[t]       * scenario.min_thermal_gen_anomaly
-        + technical.diesel_min         * projected.diesel_cap_gw[t]             * scenario.min_thermal_gen_anomaly
+        + technical.ccgt_min           * projected.combined_cycle_cap_gw[t]     * scenario.min_ccgas_gen_anomaly
+        + technical.cogen_min          * projected.cogeneration_cap_gw[t]       * scenario.min_cogen_gen_anomaly
+        + technical.diesel_min         * projected.diesel_cap_gw[t]             * scenario.min_oil_gen_anomaly
         + technical.nonren_waste_min   * projected.nonrenewable_waste_cap_gw[t]
         + projected.nuclear_cap_gw[t]  * projected.nuclear_cap_factor[t])
 
@@ -246,7 +246,7 @@ function dispatch_electricity_market(
     @constraint(model, [t=2:T], quantity[t,10] - quantity[t-1,10] <= +technical.ror_ramp * projected.run_of_river_hydro_cap_gw[t])
 
     # Pumped hydro
-    @constraint(model, ph_stock[1] == rand(Uniform(0.3, 0.7)) * technical.ph_storage_cap_gwh)
+    @constraint(model, ph_stock[1] == rand(Uniform(0.2, 0.8)) * technical.ph_storage_cap_gwh)
     @constraint(model, [t=2:T], ph_stock[t] <= technical.ph_storage_cap_gwh)
     @constraint(model, [t=2:T], 
         ph_stock[t] == ph_stock[t-1] 
@@ -275,7 +275,7 @@ function dispatch_electricity_market(
     @constraint(model, [t=2:T], quantity[t,16] - quantity[t-1,16] <= +technical.ren_waste_ramp * projected.renewable_waste_cap_gw[t])
 
     # Batteries (4h duration)
-    @constraint(model, batt_stock[1] == rand(Uniform(0.3, 0.7)) * technical.batt_duration * projected.batteries_cap_gw[1])
+    @constraint(model, batt_stock[1] == rand(Uniform(0.2, 0.8)) * technical.batt_duration * projected.batteries_cap_gw[1])
     @constraint(model, [t=2:T], batt_stock[t] <= technical.batt_duration * projected.batteries_cap_gw[t])
     @constraint(model, [t=2:T], 
         batt_stock[t] == (1 - technical.batt_decay) * batt_stock[t-1] 
