@@ -5,13 +5,13 @@
 # load the required libraries
 using DataFrames
 using CSV
-using JuMP
 using Statistics
+using JuMP
 using Gurobi
 
 # ===== 1. Auxiliary function to define iteration-specific parameters =====
-# Since the model is designed to be solved for many possible realizations of the future,
-# some parameters shall be computed for each iteration (since the input data will be different)
+# Since the model is designed to be solved for many possible realizations of the future
+# some parameters shall be computed for each iteration (the input data will be different in each one)
 
 function set_iteration_specific_parameters(
     projected::DataFrame,        # hourly projected data for 2030
@@ -65,7 +65,6 @@ function set_iteration_specific_parameters(
         a_commercial,  b_commercial,
         a_industrial,  b_industrial,
         hydro_min_hourly, hydro_max_hourly, hydro_weekly_totals,
-        ph_nat_in,
         high_prod_months, med_high_prod_months, med_low_prod_months, low_prod_months,
         n_bundles, bundles
     )
@@ -124,9 +123,8 @@ function dispatch_electricity_market(
     @constraint(model, balance[t=1:T],
         sum(quantity[t,i] for i in 1:I) + sum(imports[t,c] for c in 1:C) - sum(exports[t,c] for c in 1:C)
         == (1 + technical.grid_loss_factor) * sum(demand[t,s] for s in 1:S) 
-            + batt_in[t] / sqrt(technical.batt_roundtrip_eff * scenario.batt_roundtrip_eff_anomaly)
-            + ph_in[t] / sqrt(technical.ph_roundtrip_eff * scenario.ph_roundtrip_eff_anomaly))
-
+            + batt_in[t] 
+            + ph_in[t])
 
     # Consumer surplus
     @constraint(model, [t=1:T],
@@ -249,11 +247,10 @@ function dispatch_electricity_market(
     @constraint(model, [t=2:T], 
         ph_stock[t] == ph_stock[t-1] 
         + sqrt(technical.ph_roundtrip_eff * scenario.ph_roundtrip_eff_anomaly) * ph_in[t-1] 
-        - ph_out[t-1] / sqrt(technical.ph_roundtrip_eff * scenario.ph_roundtrip_eff_anomaly))
-         
-    @constraint(model, [t=1:T], ph_out[t] <= projected.pumped_hydro_cap_gw[t])
-    @constraint(model, [t=1:T], ph_in[t]  <= projected.pumped_hydro_cap_gw[t])
-    @constraint(model, [t=1:T], quantity[t,11] == sqrt(technical.ph_roundtrip_eff * scenario.ph_roundtrip_eff_anomaly) * ph_out[t]) 
+        - ph_out[t-1] / sqrt(technical.ph_roundtrip_eff * scenario.ph_roundtrip_eff_anomaly)) 
+    @constraint(model, [t=1:T], ph_in[t]  <= projected.pumped_hydro_pump_cap_gw[t])
+    @constraint(model, [t=1:T], ph_out[t] <= projected.pumped_hydro_turbine_cap_gw[t])
+    @constraint(model, [t=1:T], quantity[t,11] == ph_out[t]) 
 
     # Solar PV, solar thermal, wind (capacity factor bounds)
     @constraint(model, [t=1:T], quantity[t,12] <= projected.solar_pv_cap_gw[t]      * projected.solar_pv_cap_factor[t])
@@ -274,18 +271,18 @@ function dispatch_electricity_market(
 
     # Batteries (4h duration)
     @constraint(model, batt_stock[1] == rand(Uniform(0.2, 0.8)) * technical.batt_duration * projected.batteries_cap_gw[1])
-    @constraint(model, [t=2:T], batt_stock[t] <= technical.batt_duration * projected.batteries_cap_gw[t])
+    @constraint(model, [t=2:T], batt_stock[t] <= technical.batt_duration * projected.batteries_cap_gw[t] / sqrt(technical.batt_roundtrip_eff * scenario.batt_roundtrip_eff_anomaly))
     @constraint(model, [t=2:T], 
         batt_stock[t] == (1 - technical.batt_decay) * batt_stock[t-1] 
         + sqrt(technical.batt_roundtrip_eff * scenario.batt_roundtrip_eff_anomaly) * batt_in[t-1] 
         - batt_out[t-1] / sqrt(technical.batt_roundtrip_eff * scenario.batt_roundtrip_eff_anomaly))
-    @constraint(model, [t=1:T], batt_out[t] <= projected.batteries_cap_gw[t])
     @constraint(model, [t=1:T], batt_in[t]  <= projected.batteries_cap_gw[t])
-    @constraint(model, [t=1:T], quantity[t,17] == sqrt(technical.batt_roundtrip_eff * scenario.batt_roundtrip_eff_anomaly) * batt_out[t])
+    @constraint(model, [t=1:T], batt_out[t] <= projected.batteries_cap_gw[t])
+    @constraint(model, [t=1:T], quantity[t,17] == batt_out[t])
     
     # Solve
     optimize!(model)
-    status = JuMP.termination_status(model);
+    status = JuMP.termination_status(model)
 
     if status == MOI.OPTIMAL
         # Scalar welfare results
