@@ -55,8 +55,8 @@ function set_iteration_specific_parameters(
     hydro_weekly_totals = [sum(projected.conventional_hydro_gen_gwh[b]) for b in bundles]
 
     # Run of river hydro: hour indices by seasonal production group
-    hours_high_ror     = [t for t in 1:T if projected.month[t] in (1, 3, 12)]
-    hours_med_high_ror = [t for t in 1:T if projected.month[t] in (2, 4, 5, 6)]
+    hours_high_ror     = [t for t in 1:T if projected.month[t] in (1, 2, 12)]
+    hours_med_high_ror = [t for t in 1:T if projected.month[t] in (3, 4, 5, 6)]
     hours_med_low_ror  = [t for t in 1:T if projected.month[t] in (7, 11)]
     hours_low_ror      = [t for t in 1:T if projected.month[t] in (8, 9, 10)]
 
@@ -64,9 +64,9 @@ function set_iteration_specific_parameters(
         a_residential, b_residential,
         a_commercial,  b_commercial,
         a_industrial,  b_industrial,
+        n_bundles, bundles,
         hydro_min_hourly, hydro_max_hourly, hydro_weekly_totals,
-        high_prod_months, med_high_prod_months, med_low_prod_months, low_prod_months,
-        n_bundles, bundles
+        hours_high_ror, hours_med_high_ror, hours_med_low_ror, hours_low_ror
     )
 
 end
@@ -170,7 +170,7 @@ function dispatch_electricity_market(
 
     # Demand functions
     @constraint(model, [t=1:T], demand[t,1] == iteration.a_residential[t] - iteration.b_residential[t] * price[t])
-    @constraint(model, [t=1:T], demand[t,2] == iteration.a_commercial[t]  - iteration._commercial[t]   * price[t])
+    @constraint(model, [t=1:T], demand[t,2] == iteration.a_commercial[t]  - iteration.b_commercial[t]  * price[t])
     @constraint(model, [t=1:T], demand[t,3] == iteration.a_industrial[t]  - iteration.b_industrial[t]  * price[t])
 
     # Imports and exports (fixed to projected values)
@@ -356,9 +356,9 @@ function dispatch_electricity_market(
         life_e            = JuMP.value.(lifecycle_emissions)
 
         # Curtailment
-        curt_solar_pv      = 1.0 - sum(q_vals[t,12] for t in 1:T) / sum(new_data.solar_pv_cap_gw[t]      * new_data.solar_pv_cap_factor[t]      for t in 1:T)
-        curt_solar_thermal = 1.0 - sum(q_vals[t,13] for t in 1:T) / sum(new_data.solar_thermal_cap_gw[t] * new_data.solar_thermal_cap_factor[t] for t in 1:T)
-        curt_wind          = 1.0 - sum(q_vals[t,14] for t in 1:T) / sum(new_data.wind_cap_gw[t]          * new_data.wind_cap_factor[t]          for t in 1:T)
+        curt_solar_pv      = 1.0 - sum(q_vals[t,12] for t in 1:T) / sum(projected.solar_pv_cap_gw[t]      * projected.solar_pv_cap_factor[t]      for t in 1:T)
+        curt_solar_thermal = 1.0 - sum(q_vals[t,13] for t in 1:T) / sum(projected.solar_thermal_cap_gw[t] * projected.solar_thermal_cap_factor[t] for t in 1:T)
+        curt_wind          = 1.0 - sum(q_vals[t,14] for t in 1:T) / sum(projected.wind_cap_gw[t]          * projected.wind_cap_factor[t]          for t in 1:T)
 
         results = Dict(
             # Prices
