@@ -1,18 +1,28 @@
 # Antiguo código de las MC simulations para el escenario baseline
 
-# ===== Monte Carlo Simulation set up =====
+
+# load the required libraries
+using DataFrames
+using CSV
+using Statistics
+using Distributions
+using KernelDensity
+using StatsBase
+using Printf
+
+# ===== Monte Carlo set up =====
 # Pre-setup phase (run once)
 baseline_years = [2023, 2024]
 variables_to_draw = [
     "residential_demand_gwh", "commercial_demand_gwh", "industrial_demand_gwh", 
     "coal_cap_gw", "combined_cycle_cap_gw", "gas_turbine_cap_gw", "vapor_turbine_cap_gw", "cogeneration_cap_gw", "diesel_cap_gw", 
-    "nonrenewable_waste_cap_gw", "nuclear_cap_gw", "conventional_hydro_cap_gw", "run_of_river_hydro_cap_gw", "pumped_hydro_cap_gw", 
+    "nonrenewable_waste_cap_gw", "nuclear_cap_gw", "conventional_hydro_cap_gw", "run_of_river_hydro_cap_gw", "pumped_hydro_turbine_cap_gw", 
     "solar_pv_cap_gw", "solar_thermal_cap_gw", "wind_cap_gw", "other_renewable_cap_gw", "renewable_waste_cap_gw", "batteries_cap_gw",
     "cost_coal_eur_gwh", "cost_gas_eur_gwh", "cost_diesel_eur_gwh", "cost_uranium_eur_gwh", "eu_ets_price_eur_tco2",
-    "imp_fra_cap_gw", "exp_fra_cap_gw", "imp_por_cap_gw", "exp_por_cap_gw", "imp_mor_cap_gw", "exp_mor_cap_gw"
+    # "imp_fra_cap_gw", "exp_fra_cap_gw", "imp_por_cap_gw", "exp_por_cap_gw", "imp_mor_cap_gw", "exp_mor_cap_gw"
 ]
 
-# Pre-compute sampling data
+# Pre-compute sampling data (so it is not done for each iteration)
 sampling_data = Dict{String, Tuple{Vector{Float64}, Weights}}()
 for var in variables_to_draw
     subset = projection_deltas[projection_deltas.variable .== var, :]
@@ -73,6 +83,52 @@ function continuous_sample_delta(deltas::Vector{Float64}, weights::Weights, var:
         max_val = maximum(deltas) + 0.1 * abs(maximum(deltas))
         return clamp(sampled_val, min_val, max_val)
     end
+end
+
+function calculate_hourly_averages(data::Vector{Float64}, hours_per_day::Int=24)
+    # Make sure the vector length is divisible by hours_per_day
+    @assert length(data) % hours_per_day == 0 "Data length must be divisible by hours_per_day"
+    
+    num_days = length(data) ÷ hours_per_day
+    hourly_averages = zeros(Float64, hours_per_day)
+
+    for hour in 1:hours_per_day
+        # Get values for this specific hour across all days
+        hour_values = [data[hour + (day-1)*hours_per_day] for day in 1:num_days]        
+        # Calculate the average
+        hourly_averages[hour] = mean(hour_values)
+    end
+
+    return hourly_averages
+end
+
+function calculate_monthly_averages(data::Vector{Float64}, month_indices::Vector{Int})
+    # Check that we have month data for each hour
+    @assert length(data) == length(month_indices) "Data and month_indices must be same length"
+    
+    monthly_sums = zeros(Float64, 12)
+    monthly_counts = zeros(Int, 12)
+    
+    for i in 1:length(data)
+        month = month_indices[i]
+        if 1 <= month <= 12  # Ensure valid month index
+            monthly_sums[month] += data[i]
+            monthly_counts[month] += 1
+        end
+    end
+    
+    # Calculate averages (handle case where some months might not have data)
+    monthly_averages = zeros(Float64, 12)
+    for m in 1:12
+        if monthly_counts[m] > 0
+            monthly_averages[m] = monthly_sums[m] / monthly_counts[m]
+        else
+            # If no data for this month, use NaN or some placeholder
+            monthly_averages[m] = NaN
+        end
+    end
+
+    return monthly_averages
 end
 
 # Pre-allocate containers
@@ -208,52 +264,6 @@ monthly_new_results = DataFrame(
   rengenshare1 = Float64[], rengenshare2 = Float64[], rengenshare3 = Float64[], rengenshare4 = Float64[], rengenshare5 = Float64[], rengenshare6 = Float64[],
   rengenshare7 = Float64[], rengenshare8 = Float64[], rengenshare9 = Float64[], rengenshare10 = Float64[], rengenshare11 = Float64[], rengenshare12 = Float64[],
 )
-
-function calculate_hourly_averages(data::Vector{Float64}, hours_per_day::Int=24)
-    # Make sure the vector length is divisible by hours_per_day
-    @assert length(data) % hours_per_day == 0 "Data length must be divisible by hours_per_day"
-    
-    num_days = length(data) ÷ hours_per_day
-    hourly_averages = zeros(Float64, hours_per_day)
-
-    for hour in 1:hours_per_day
-        # Get values for this specific hour across all days
-        hour_values = [data[hour + (day-1)*hours_per_day] for day in 1:num_days]        
-        # Calculate the average
-        hourly_averages[hour] = mean(hour_values)
-    end
-
-    return hourly_averages
-end
-
-function calculate_monthly_averages(data::Vector{Float64}, month_indices::Vector{Int})
-    # Check that we have month data for each hour
-    @assert length(data) == length(month_indices) "Data and month_indices must be same length"
-    
-    monthly_sums = zeros(Float64, 12)
-    monthly_counts = zeros(Int, 12)
-    
-    for i in 1:length(data)
-        month = month_indices[i]
-        if 1 <= month <= 12  # Ensure valid month index
-            monthly_sums[month] += data[i]
-            monthly_counts[month] += 1
-        end
-    end
-    
-    # Calculate averages (handle case where some months might not have data)
-    monthly_averages = zeros(Float64, 12)
-    for m in 1:12
-        if monthly_counts[m] > 0
-            monthly_averages[m] = monthly_sums[m] / monthly_counts[m]
-        else
-            # If no data for this month, use NaN or some placeholder
-            monthly_averages[m] = NaN
-        end
-    end
-
-    return monthly_averages
-end
 
 # ===== Monte Carlo Simulation Loop =====
 num_iterations = 5000
