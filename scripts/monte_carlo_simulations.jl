@@ -19,7 +19,6 @@ variables_to_draw = [
     "nonrenewable_waste_cap_gw", "nuclear_cap_gw", "conventional_hydro_cap_gw", "run_of_river_hydro_cap_gw", "pumped_hydro_turbine_cap_gw", 
     "solar_pv_cap_gw", "solar_thermal_cap_gw", "wind_cap_gw", "other_renewable_cap_gw", "renewable_waste_cap_gw", "batteries_cap_gw",
     "cost_coal_eur_gwh", "cost_gas_eur_gwh", "cost_diesel_eur_gwh", "cost_uranium_eur_gwh", "eu_ets_price_eur_tco2",
-    # "imp_fra_cap_gw", "exp_fra_cap_gw", "imp_por_cap_gw", "exp_por_cap_gw", "imp_mor_cap_gw", "exp_mor_cap_gw"
 ]
 
 # Pre-compute sampling data (so it is not done for each iteration)
@@ -85,6 +84,7 @@ function continuous_sample_delta(deltas::Vector{Float64}, weights::Weights, var:
     end
 end
 
+# REVISAR SI SE PUEDE SIMPLIFICAR EL CÓDIGO
 function calculate_hourly_averages(data::Vector{Float64}, hours_per_day::Int=24)
     # Make sure the vector length is divisible by hours_per_day
     @assert length(data) % hours_per_day == 0 "Data length must be divisible by hours_per_day"
@@ -94,7 +94,7 @@ function calculate_hourly_averages(data::Vector{Float64}, hours_per_day::Int=24)
 
     for hour in 1:hours_per_day
         # Get values for this specific hour across all days
-        hour_values = [data[hour + (day-1)*hours_per_day] for day in 1:num_days]        
+        hour_values = [data[hour + (day-1) * hours_per_day] for day in 1:num_days]        
         # Calculate the average
         hourly_averages[hour] = mean(hour_values)
     end
@@ -123,7 +123,6 @@ function calculate_monthly_averages(data::Vector{Float64}, month_indices::Vector
         if monthly_counts[m] > 0
             monthly_averages[m] = monthly_sums[m] / monthly_counts[m]
         else
-            # If no data for this month, use NaN or some placeholder
             monthly_averages[m] = NaN
         end
     end
@@ -132,138 +131,16 @@ function calculate_monthly_averages(data::Vector{Float64}, month_indices::Vector
 end
 
 # Pre-allocate containers
-all_delta_draws = DataFrame(
-    year_random_draw = Int[],
-    day_start = Int[],
-    delta_residential_demand_gwh = Float64[], 
-    delta_commercial_demand_gwh = Float64[],
-    delta_industrial_demand_gwh = Float64[],
-    delta_coal_cap_gw = Float64[],
-    delta_combined_cycle_cap_gw = Float64[],
-    delta_gas_turbine_cap_gw = Float64[],
-    delta_vapor_turbine_cap_gw = Float64[],
-    delta_cogeneration_cap_gw = Float64[],
-    delta_diesel_cap_gw = Float64[],
-    delta_nonrenewable_waste_cap_gw = Float64[],
-    delta_nuclear_cap_gw = Float64[],
-    delta_conventional_hydro_cap_gw = Float64[],
-    delta_run_of_river_hydro_cap_gw = Float64[],
-    delta_pumped_hydro_cap_gw = Float64[],
-    delta_solar_pv_cap_gw = Float64[],
-    delta_solar_thermal_cap_gw = Float64[],
-    delta_wind_cap_gw = Float64[],
-    delta_other_renewable_cap_gw = Float64[],
-    delta_renewable_waste_cap_gw = Float64[],
-    delta_batteries_cap_gw = Float64[],
-    delta_cost_coal_eur_gwh = Float64[],
-    delta_cost_gas_eur_gwh = Float64[],
-    delta_cost_diesel_eur_gwh = Float64[],
-    delta_cost_uranium_eur_gwh = Float64[],
-    delta_eu_ets_price_eur_tco2 = Float64[],
-    delta_imp_fra_cap_gw = Float64[],
-    delta_exp_fra_cap_gw = Float64[],
-    delta_imp_por_cap_gw = Float64[],
-    delta_exp_por_cap_gw = Float64[],
-    delta_imp_mor_cap_gw = Float64[],
-    delta_exp_mor_cap_gw = Float64[]   
+results_list = Vector{NamedTuple}(undef, NUM_ITER)
+results_list[i] = (
+    iteration = i,
+    deltas = deltas,
+    inputs = iteration_inputs
+    results = summary_results,
+    monthly = monthly_results,
+    hourly = hourly_results
 )
 
-mean_values_new_data = DataFrame(
-    residential_demand_gwh = Float64[],
-    commercial_demand_gwh = Float64[],
-    industrial_demand_gwh = Float64[],
-    coal_cap_gw = Float64[],
-    combined_cycle_cap_gw = Float64[],
-    gas_turbine_cap_gw = Float64[],
-    vapor_turbine_cap_gw = Float64[],
-    cogeneration_cap_gw = Float64[],
-    diesel_cap_gw = Float64[],
-    nonrenewable_waste_cap_gw = Float64[],
-    nuclear_cap_gw = Float64[],
-    conventional_hydro_cap_gw = Float64[],
-    run_of_river_hydro_cap_gw = Float64[],
-    pumped_hydro_cap_gw = Float64[],
-    solar_pv_cap_gw = Float64[],
-    solar_thermal_cap_gw = Float64[],
-    wind_cap_gw = Float64[],
-    other_renewable_cap_gw = Float64[],
-    renewable_waste_cap_gw = Float64[],
-    batteries_cap_gw = Float64[],
-    cost_coal_eur_gwh = Float64[],
-    cost_gas_eur_gwh = Float64[],
-    cost_diesel_eur_gwh = Float64[],
-    cost_uranium_eur_gwh = Float64[],
-    eu_ets_price_eur_tco2 = Float64[],
-)
-
-selected_results =  DataFrame(
-  iteration = Int[],
-  avg_price = Float64[],
-  max_price = Float64[],
-  std_price = Float64[],
-  total_demand = Float64[],
-  total_generation = Float64[],
-  combined_cycle_gen = Float64[],
-  cogeneration_gen = Float64[],
-  nuclear_gen = Float64[],
-  other_non_renewable_gen = Float64[],
-  conventional_hydro_gen = Float64[],
-  pumped_hydro_gen = Float64[],
-  solar_pv_gen = Float64[],
-  solar_thermal_gen = Float64[],
-  wind_gen = Float64[],
-  batteries_gen = Float64[],
-  other_renewable_gen = Float64[],
-  total_imports = Float64[],
-  total_exports = Float64[],
-  consumer_surplus = Float64[],
-  producer_surplus = Float64[],
-  net_welfare = Float64[],
-  min_share_renewable_gen = Float64[],
-  mean_share_renewable_gen = Float64[],
-  median_share_renewable_gen = Float64[],
-  max_share_renewable_gen = Float64[],
-  min_non_renewable_gen = Float64[],
-  lifecycle_emissions = Float64[],
-  direct_emissions = Float64[],
-  curt_solar_pv = Float64[],
-  curt_solar_thermal = Float64[],
-  curt_wind = Float64[],
-)
-
-hourly_new_results =  DataFrame(
-  iteration = Int[],
-  price1 = Float64[], price2 = Float64[], price3 = Float64[], price4 = Float64[], price5 = Float64[], price6 = Float64[], price7 = Float64[], price8 = Float64[],
-    price9 = Float64[], price10 = Float64[], price11 = Float64[], price12 = Float64[], price13 = Float64[], price14 = Float64[], price15 = Float64[], price16 = Float64[],
-    price17 = Float64[], price18 = Float64[], price19 = Float64[], price20 = Float64[], price21 = Float64[], price22 = Float64[], price23 = Float64[], price24 = Float64[],
-    battout1 = Float64[], battout2 = Float64[], battout3 = Float64[], battout4 = Float64[], battout5 = Float64[], battout6 = Float64[], battout7 = Float64[], battout8 = Float64[],
-    battout9 = Float64[], battout10 = Float64[], battout11 = Float64[], battout12 = Float64[], battout13 = Float64[], battout14 = Float64[], battout15 = Float64[], battout16 = Float64[],
-    battout17 = Float64[], battout18 = Float64[], battout19 = Float64[], battout20 = Float64[], battout21 = Float64[], battout22 = Float64[], battout23 = Float64[], battout24 = Float64[],
-    phout1 = Float64[], phout2 = Float64[], phout3 = Float64[], phout4 = Float64[], phout5 = Float64[], phout6 = Float64[], phout7 = Float64[], phout8 = Float64[],
-    phout9 = Float64[], phout10 = Float64[], phout11 = Float64[], phout12 = Float64[], phout13 = Float64[], phout14 = Float64[], phout15 = Float64[], phout16 = Float64[],
-    phout17 = Float64[], phout18 = Float64[], phout19 = Float64[], phout20 = Float64[], phout21 = Float64[], phout22 = Float64[], phout23 = Float64[], phout24 = Float64[],
-    emissions1 = Float64[], emissions2 = Float64[], emissions3 = Float64[], emissions4 = Float64[], emissions5 = Float64[], emissions6 = Float64[], emissions7 = Float64[], emissions8 = Float64[], 
-    emissions9 = Float64[], emissions10 = Float64[], emissions11 = Float64[], emissions12 = Float64[], emissions13 = Float64[], emissions14 = Float64[], emissions15 = Float64[], emissions16 = Float64[],
-    emissions17 = Float64[], emissions18 = Float64[], emissions19 = Float64[], emissions20 = Float64[], emissions21 = Float64[], emissions22 = Float64[], emissions23 = Float64[], emissions24 = Float64[],
-    rengenshare1 = Float64[], rengenshare2 = Float64[], rengenshare3 = Float64[], rengenshare4 = Float64[], rengenshare5 = Float64[], rengenshare6 = Float64[],
-    rengenshare7 = Float64[], rengenshare8 = Float64[], rengenshare9 = Float64[], rengenshare10 = Float64[], rengenshare11 = Float64[], rengenshare12 = Float64[],
-    rengenshare13 = Float64[], rengenshare14 = Float64[], rengenshare15 = Float64[], rengenshare16 = Float64[], rengenshare17 = Float64[], rengenshare18 = Float64[],
-    rengenshare19 = Float64[], rengenshare20 = Float64[], rengenshare21 = Float64[], rengenshare22 = Float64[], rengenshare23 = Float64[], rengenshare24 = Float64[],
-)
-
-monthly_new_results = DataFrame(
-  iteration = Int[],
-  price1 = Float64[], price2 = Float64[], price3 = Float64[], price4 = Float64[], price5 = Float64[], price6 = Float64[], 
-  price7 = Float64[], price8 = Float64[], price9 = Float64[], price10 = Float64[], price11 = Float64[], price12 = Float64[],
-  battout1 = Float64[], battout2 = Float64[], battout3 = Float64[], battout4 = Float64[], battout5 = Float64[], battout6 = Float64[],
-  battout7 = Float64[], battout8 = Float64[], battout9 = Float64[], battout10 = Float64[], battout11 = Float64[], battout12 = Float64[],
-  phout1 = Float64[], phout2 = Float64[], phout3 = Float64[], phout4 = Float64[], phout5 = Float64[], phout6 = Float64[],
-  phout7 = Float64[], phout8 = Float64[], phout9 = Float64[], phout10 = Float64[], phout11 = Float64[], phout12 = Float64[],
-  emissions1 = Float64[], emissions2 = Float64[], emissions3 = Float64[], emissions4 = Float64[], emissions5 = Float64[], emissions6 = Float64[],
-  emissions7 = Float64[], emissions8 = Float64[], emissions9 = Float64[], emissions10 = Float64[], emissions11 = Float64[], emissions12 = Float64[],
-  rengenshare1 = Float64[], rengenshare2 = Float64[], rengenshare3 = Float64[], rengenshare4 = Float64[], rengenshare5 = Float64[], rengenshare6 = Float64[],
-  rengenshare7 = Float64[], rengenshare8 = Float64[], rengenshare9 = Float64[], rengenshare10 = Float64[], rengenshare11 = Float64[], rengenshare12 = Float64[],
-)
 
 # ===== Monte Carlo Simulation Loop =====
 num_iterations = 5000
