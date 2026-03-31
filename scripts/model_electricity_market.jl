@@ -15,7 +15,7 @@ using Gurobi
 
 function set_iteration_specific_parameters(
     projected::DataFrame,        # hourly projected data for 2030
-    technical::NamedTuple        # technical parameters shared across scenarios
+    technical::NamedTuple,       # technical parameters shared across scenarios
     scenario::NamedTuple,        # scenario-specific parameters
    )
 
