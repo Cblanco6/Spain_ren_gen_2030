@@ -10,6 +10,12 @@ using KernelDensity
 using StatsBase
 using Printf
 
+
+# load all necessary inputs:(corregir rutas)
+technical_df = CSV.read("technical_params.csv", DataFrame)
+technical = NamedTuple(technical_df[1, :])
+
+
 # ===== Monte Carlo set up =====
 # Pre-setup phase (run once)
 baseline_years = [2023, 2024]
@@ -28,110 +34,10 @@ for var in variables_to_draw
     sampling_data[var] = (subset.delta, Weights(subset.weight))
 end
 
-# Function to create distributions based on sampling data
-function continuous_sample_delta(deltas::Vector{Float64}, weights::Weights, var::String)
 
-    # Special case for coal capacity (100% sure of phase out)
-    if var == "coal_cap_gw"
-        return deltas[1]
-    end
-
-    # Discrete sampling for interconnectors capacity
-    if startswith(var, "imp_") || startswith(var, "exp_")
-        normalized_weights = weights ./ sum(weights)
-        idx = sample(1:length(deltas), Weights(normalized_weights))
-        return deltas[idx]
-    end
-
-    mu = mean(deltas)
-    sigma = std(deltas)
-
-    small_std_threshold = 0.05
-
-    # For those that we do not have information, # we use a small standard deviation 
-    if mu == 0 && sigma == 0
-        std_dev = 0.05
-        return rand(Normal(0.0, std_dev))
-    end
-
-    if sigma < small_std_threshold
-        # Normal approx for small spread
-        return rand(Normal(mu, sigma))
-    else
-        # KDE with reduced bandwidth for tighter distribution
-        # Default bandwidth is approximately 1.06 * std(data) * n^(-1/5)
-        # We'll use a smaller factor to reduce spread
-        bandwidth = 0.75 * std(deltas) * length(deltas)^(-1/5)
-        kde_est = KernelDensity.kde(deltas, weights=weights, bandwidth=bandwidth)
-        
-        # Sample from KDE by inverse transform sampling
-        x_vals = kde_est.x
-        pdf_vals = kde_est.density
-        
-        # Normalize PDF values
-        pdf_vals = pdf_vals ./ sum(pdf_vals)
-        cdf_vals = cumsum(pdf_vals)
-
-        # Sample with bounds checking
-        u = rand()
-        idx = searchsortedfirst(cdf_vals, u)
-        sampled_val = x_vals[clamp(idx, 1, length(x_vals))]
-        
-        # Optional: Further constrain extreme values
-        min_val = minimum(deltas) - 0.1 * abs(minimum(deltas))
-        max_val = maximum(deltas) + 0.1 * abs(maximum(deltas))
-        return clamp(sampled_val, min_val, max_val)
-    end
-end
-
-# REVISAR SI SE PUEDE SIMPLIFICAR EL CÓDIGO
-function calculate_hourly_averages(data::Vector{Float64}, hours_per_day::Int=24)
-    # Make sure the vector length is divisible by hours_per_day
-    @assert length(data) % hours_per_day == 0 "Data length must be divisible by hours_per_day"
-    
-    num_days = length(data) ÷ hours_per_day
-    hourly_averages = zeros(Float64, hours_per_day)
-
-    for hour in 1:hours_per_day
-        # Get values for this specific hour across all days
-        hour_values = [data[hour + (day-1) * hours_per_day] for day in 1:num_days]        
-        # Calculate the average
-        hourly_averages[hour] = mean(hour_values)
-    end
-
-    return hourly_averages
-end
-
-function calculate_monthly_averages(data::Vector{Float64}, month_indices::Vector{Int})
-    # Check that we have month data for each hour
-    @assert length(data) == length(month_indices) "Data and month_indices must be same length"
-    
-    monthly_sums = zeros(Float64, 12)
-    monthly_counts = zeros(Int, 12)
-    
-    for i in 1:length(data)
-        month = month_indices[i]
-        if 1 <= month <= 12  # Ensure valid month index
-            monthly_sums[month] += data[i]
-            monthly_counts[month] += 1
-        end
-    end
-    
-    # Calculate averages (handle case where some months might not have data)
-    monthly_averages = zeros(Float64, 12)
-    for m in 1:12
-        if monthly_counts[m] > 0
-            monthly_averages[m] = monthly_sums[m] / monthly_counts[m]
-        else
-            monthly_averages[m] = NaN
-        end
-    end
-
-    return monthly_averages
-end
 
 # Pre-allocate containers
-results_list = Vector{NamedTuple}(undef, NUM_ITER)
+results_list = Vector{NamedTuple}(undef, num_iterations)
 results_list[i] = (
     iteration = i,
     deltas = deltas,
@@ -143,6 +49,36 @@ results_list[i] = (
 
 
 # ===== Monte Carlo Simulation Loop =====
+
+# idea de estructura
+
+for i in 1:num_iterations
+
+    # 1. sample time window
+    new_data, year, day_start = sample_time_window(hourly_data, baseline_years)
+
+    # 2. sample deltas
+    delta_draws = sample_deltas(variables_to_draw, sampling_data)
+
+    # 3. apply deltas
+    apply_deltas!(new_data, delta_draws)
+
+    # 4. compute params (ja ho tens fora)
+    params = compute_iteration_params(...)
+
+    # 5. solve model
+    results = dispatch_electricity_market(...)
+
+    # 6. post-process
+    hourly = calculate_hourly_averages(...)
+    monthly = calculate_monthly_averages(...)
+
+    # 7. store
+    results_list[i] = (...)
+
+end
+
+# -----
 num_iterations = 5000
 
 for i in 201:num_iterations
@@ -173,14 +109,6 @@ for i in 201:num_iterations
     # Adjust conventional hydro variables
     delta_conventional_hydro = delta_draws["conventional_hydro_cap_gw"]
     new_data.conventional_hydro_cap_gw .*= (1 + delta_conventional_hydro)
-
-    # Adjust interconnectors
-    interconnectors_delta[1] = delta_draws["imp_fra_cap_gw"]
-    interconnectors_delta[2] = delta_draws["exp_fra_cap_gw"]
-    interconnectors_delta[3] = delta_draws["imp_por_cap_gw"]
-    interconnectors_delta[4] = delta_draws["exp_por_cap_gw"]
-    interconnectors_delta[5] = delta_draws["imp_mor_cap_gw"]
-    interconnectors_delta[6] = delta_draws["exp_mor_cap_gw"]
 
     # Modify the column fixed_data.avg_cap_2024 for row coal to be the mean of new_data.coal_cap_gw
     fixed_data_new = DataFrame()  

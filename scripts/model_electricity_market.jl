@@ -1,6 +1,4 @@
-# This script defines the functions needed to run each iteration
-# 1. Defines a function to set iteration-specific parameters such as demand functions parameters
-# 2. Defines the model that simulates the Spanish electricity market
+# This script defines the function that simulates the Spanish electricity market
 
 # load the required libraries
 using DataFrames
@@ -9,77 +7,13 @@ using Statistics
 using JuMP
 using Gurobi
 
-# ===== 1. Auxiliary function to define iteration-specific parameters =====
-# Since the model is designed to be solved for many possible realizations of the future
-# some parameters shall be computed for each iteration (the input data will be different in each one)
-
-function set_iteration_specific_parameters(
-    projected::DataFrame,        # hourly projected data for 2030
-    technical::NamedTuple,       # technical parameters shared across scenarios
-    scenario::NamedTuple,        # scenario-specific parameters
-   )
-
-    T = nrow(projected)
-
-    # Set minimum price to be 0.5 such that demand functions are well defined
-    projected.spot_price_eur_gwh .= ifelse.(projected.spot_price_eur_gwh .<= 0.5, 0.5, projected.spot_price_eur_gwh)
-
-    # Parameters defining domestic demand functions are re-computed in each simulation
-    b_residential = technical.elas_residential * scenario.elas_anomaly * projected.residential_demand_gwh ./ projected.spot_price_eur_gwh
-    b_commercial  = technical.elas_commercial  * scenario.elas_anomaly * projected.commercial_demand_gwh  ./ projected.spot_price_eur_gwh
-    b_industrial  = technical.elas_industrial  * scenario.elas_anomaly * projected.industrial_demand_gwh  ./ projected.spot_price_eur_gwh
-
-    a_residential = projected.residential_demand_gwh + b_residential .* projected.spot_price_eur_gwh
-    a_commercial  = projected.commercial_demand_gwh  + b_commercial  .* projected.spot_price_eur_gwh
-    a_industrial  = projected.industrial_demand_gwh  + b_industrial  .* projected.spot_price_eur_gwh
-
-    # Hydro bundles for weekly allocation maximization
-    bundle_size = 168   # number of hours in a week
-    total_hours = nrow(projected)
-    n_bundles   = div(total_hours, bundle_size)
-
-    starts  = [1 + (w - 1) * bundle_size for w in 1:n_bundles]
-    bundles = [s:s + bundle_size - 1 for s in starts[1:n_bundles]]
-
-    hydro_min_weekly = [minimum(projected.conventional_hydro_gen_gwh[b]) for b in bundles]
-    hydro_max_weekly = [maximum(projected.conventional_hydro_gen_gwh[b]) for b in bundles]
-
-    hydro_min_hourly = zeros(Float64, total_hours)
-    hydro_max_hourly = zeros(Float64, total_hours)
-
-    for (w, b) in enumerate(bundles)
-        hydro_min_hourly[b] .= hydro_min_weekly[w]
-        hydro_max_hourly[b] .= hydro_max_weekly[w]
-    end
-
-    hydro_weekly_totals = [sum(projected.conventional_hydro_gen_gwh[b]) for b in bundles]
-
-    # Run of river hydro: hour indices by seasonal production group
-    hours_high_ror     = [t for t in 1:T if projected.month[t] in (1, 2, 12)]
-    hours_med_high_ror = [t for t in 1:T if projected.month[t] in (3, 4, 5, 6)]
-    hours_med_low_ror  = [t for t in 1:T if projected.month[t] in (7, 11)]
-    hours_low_ror      = [t for t in 1:T if projected.month[t] in (8, 9, 10)]
-
-    return (;
-        a_residential, b_residential,
-        a_commercial,  b_commercial,
-        a_industrial,  b_industrial,
-        n_bundles, bundles,
-        hydro_min_hourly, hydro_max_hourly, hydro_weekly_totals,
-        hours_high_ror, hours_med_high_ror, hours_med_low_ror, hours_low_ror
-    )
-
-end
-
-
 # ===== Definition of the model: dispatch_electricity_market function =====
 function dispatch_electricity_market(
     projected::DataFrame,        # hourly projected data for 2030
     technology::DataFrame,       # fixed technical and economic parameters by generation technology
     technical::NamedTuple,       # technical parameters shared across scenarios
     scenario::NamedTuple,        # scenario-specific parameters
-    iteration::NamedTuple,       # iteration-specific parameters
-    years_solving::Float64 = 0.230137
+    iteration::NamedTuple        # iteration-specific parameters
     )
 
     # Initialize the model solver
@@ -90,6 +24,7 @@ function dispatch_electricity_market(
 
     # Set indices
     T = nrow(projected)
+    years_solving = T / (365.25 * 24)
     I = nrow(technology)
     S = 3   # residential, commercial, industrial
     C = 3   # Portugal, France, Morocco
