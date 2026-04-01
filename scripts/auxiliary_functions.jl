@@ -1,59 +1,71 @@
-# This script provides all the other auxiliary functions needed 
-# to make the Monte Carlo framework and the model work
+# This script provides the auxiliary functions needed to make the Monte Carlo framework and the model work
 
+# In particular, defines the following functions:
 
-# follow the order of the MC loop
-...
+# 1. sample_time_window to select the 7-day window and baseline year of the dataset to be projected
+# 2. build_deltas_dictionary to create a dictionary of the projection estimates and weights to each variable (run once)
+# 3. sampling_procedure defines the sampling procedure for the projection  stimates
+# 4. sample_deltas applies the sampling procedure to get a dictionary of draws for each iteration
+# 5. apply_deltas! projects the sampled_window_data to 2030 by applying the delta draws
+# 6. set_iteration_specific_parameters to define some parameters specific to each iteration hat are passed to the model
+# 7. calculate_hourly_averages computes averages to retrieve hourly profiles of a selection of variables
+# 8. calculate_monthly_averages computes averages to retrieve monthly profiles of a selection of variables
 
 
 
 # ===== 1. Auxiliary function to sample a time window =====
-# Instead of solving for an entire year each time, we solve for a randomly selected 
-# 7-day window for each month. The idea is to take a "mould" (such subset of one of
-# the defined baseline years), which is historical data, which will then be projected.
-# This process ensures more variability on our moulds, and so more robustness of results.
-# This function cerates the "mould" from historical data
+# Instead of solving for an entire year, we solve for a randomly selected 7-day window each month.
+# The idea is to randomly select a "mould" of historical data, which is then projected.
+# This process ensures more variability on our moulds, so more robustness of results.
+# This function creates the mentioned "mould" from historical data, which we call sampled_window_data.
 
 function sample_time_window(hourly_data, baseline_years)
     year = rand(baseline_years)
     day_start = rand(1:21)
 
-    data_year = hourly_data[hourly_data.year .== year, :]
-    data_window = filter(row -> row.day >= day_start && row.day < day_start + 7, data_year)
+    sampled_window_data = filter(row ->
+        row.year == year &&
+        row.day >= day_start &&
+        row.day < day_start + 7,
+        hourly_data
+    )
 
-    return data_window, year, day_start
+    return sampled_window_data, year, day_start
 end
 
 
 
 # ===== 2. Auxiliary function to pre-process the projection data =====
-# We have gathered several all reliable and available estimates on how key variables will
-# evolve by 2030. projection_deltas.csv contains those values computed as increments 
-# ("deltas") with respect to the values for each of those variables for the baseline years.  
-# This function creates a dictionary which avoids having to filter the projections_delta 
-# dataset for each variable that we are sampling a projection estimate
+# We have gathered all available and reliable estimates on how key variables will evolve by 2030. 
+# projection_deltas.csv contains those values computed as increments ("deltas")
+# with respect to the values for each of those variables for the baseline years.  
+# This function is run once and creates a dictionary with deltas and weights 
+# for each variable, avoiding having to filter the projections_delta in each iteration.
 
-function build_sampling_data(projection_deltas, variables_to_draw)
-    sampling_data = Dict{String, Tuple{Vector{Float64}, Weights}}()
+function build_deltas_dictionary(projection_deltas, variables_to_draw)
+    deltas_dictionary = Dict{String, Tuple{Vector{Float64}, Weights}}()
 
     for var in variables_to_draw
         subset = projection_deltas[projection_deltas.variable .== var, :]
-        sampling_data[var] = (subset.delta, Weights(subset.weight))
+        deltas_dictionary[var] = (subset.delta, Weights(subset.weight))
     end
     
-    # This will be of the form: 
-    # "variable_name" => ([delta1, delta2], Weights([weight1, weight2])), ... 
-    return sampling_data 
+    return deltas_dictionary 
 end
 
+# The deltas_dictionary will be of the form: 
+# "variable_name1" => ([v1_delta_1, v1_delta_2], Weights([v1_weight_1, v1_weight_2])),  
+# "variable_name2" => ([v2_delta_1, v2_delta_2, v2_delta_3], Weights([v3_weight_1, v2_weight_2, v2_weight_3])), 
+# ... 
 
 
-# ===== 3. Auxiliary function to sample a projection estimate =====
+
+# ===== 3. Auxiliary function to define the sampling process =====
 # In each Monte Carlo Simulation we project a randomly selected subset of the   
-# historical data to simulate a possible realization of 2030 in Spain. 
-# This function specifies how to do this sample for different kinds of variables
+# historical data ("mould") to simulate a possible realization of 2030 in Spain. 
+# This function specifies how this sampling process is done for different kinds of variables.
 
-function continuous_sample_delta(deltas::Vector{Float64}, weights::Weights, var::String)
+function sampling_procedure(deltas::Vector{Float64}, weights::Weights, var::String)
 
     # Special case for coal capacity (100% sure of phase out)
     if var == "coal_cap_gw"
@@ -67,11 +79,11 @@ function continuous_sample_delta(deltas::Vector{Float64}, weights::Weights, var:
         return deltas[idx]
     end
 
-    # Set parameters for the rest of the variables we are projecting
+    # Define parameters for the rest of the variables we are projecting
     mu = mean(deltas)
     sigma = std(deltas)
 
-    # For those that we do not have information, # we use a small standard deviation 
+    # For those that we do not have information, we use a small standard deviation 
     if mu == 0 && sigma == 0
         std_dev = 0.05
         return rand(Normal(0.0, std_dev))
@@ -84,7 +96,6 @@ function continuous_sample_delta(deltas::Vector{Float64}, weights::Weights, var:
 
     # For those with larger spread, we use sample from a kernel density distribution
     else
-        # KDE with reduced bandwidth for tighter distribution
         # Default bandwidth is approximately 1.06 * std(data) * n^(-1/5)
         # We'll use a smaller factor to reduce spread
         bandwidth = 0.75 * std(deltas) * length(deltas)^(-1/5)
@@ -103,7 +114,7 @@ function continuous_sample_delta(deltas::Vector{Float64}, weights::Weights, var:
         idx = searchsortedfirst(cdf_vals, u)
         sampled_val = x_vals[clamp(idx, 1, length(x_vals))]
         
-        # Further constrain extreme values such that no sample is 10% belo/above the min/max data point
+        # Further constrain extreme values such that no sample is 10% below/above the min/max data point
         min_val = minimum(deltas) - 0.1 * abs(minimum(deltas))
         max_val = maximum(deltas) + 0.1 * abs(maximum(deltas))
         return clamp(sampled_val, min_val, max_val)
@@ -112,36 +123,47 @@ end
 
 
 
-------------
-# still to explain !!!
+# ===== 4. Auxiliary function to sample a projection estimate for each variable to draw =====
+# This function applies the sampling_procedure function to each of the variables in variables_to_draw.
+# Returns another dictionary, delta draws, with the specific values to project the "mould" to 2030.
 
-function sample_deltas(variables_to_draw, sampling_data)
+function sample_deltas(variables_to_draw, deltas_dictionary)
     delta_draws = Dict{String, Float64}()
 
     for var in variables_to_draw
-        deltas, weights = sampling_data[var]
-        delta_draws[var] = continuous_sample_delta(deltas, weights, var)
+        # retive deltas and weights from the deltas_dictionary
+        deltas, weights = deltas_dictionary[var]
+        # apply sampling_procedure to draw a specific delta for each variable
+        delta_draws[var] = sampling_procedure(deltas, weights, var)
     end
 
     return delta_draws
 end
 
+# The delta_draws dictionary will be of the form: 
+# "variable_name1" => v1_delta_draw,  
+# "variable_name2" => v2_delta_draw, 
+# ... 
 
-function apply_deltas!(df, delta_draws)
+
+# ===== 5. Auxiliary function to project the "mould" dataset to 2030  =====
+# This function projects the "mould" (sampled_window_data) to 2030 by applying
+# the sampling_procedure function to each of the variables in variables_to_draw.
+# Returns the "hypothetical 2030 realization" to input into the model in each iteration.
+# The ! at the end of the name is a Julia convention to signal that some of the arguments will be modified
+
+function apply_deltas!(sampled_window_data, delta_draws)
     for (var, delta) in delta_draws
-        if !startswith(var, "imp_") && !startswith(var, "exp_")
-            df[!, var] .*= (1 + delta)
-        end
+        sampled_window_data[!, var] .*= (1 + delta)
     end
 end
-------------------
 
 
 
-# ===== xx. Auxiliary function to define iteration-specific parameters =====
-# Since the model is designed to be solved for many possible realizations of the future
-# some parameters shall be computed for each iteration (the input data will be different in each one)
-# The result is a named tuple which is inputed into the model
+# ===== 6. Auxiliary function to define iteration-specific parameters =====
+# Since the model is designed to be solved for many possible realizations of the future,
+# some parameters shall be computed for each iteration (the input data will be different in each one).
+# That is exactly what this function does, and returns a named tuple which is inputed into the model
 
 function set_iteration_specific_parameters(
     projected::DataFrame,        # hourly projected data for 2030
@@ -202,12 +224,12 @@ function set_iteration_specific_parameters(
 end
 
 
-# ===== xx. Auxiliary function to compute hourly averages of key results =====
+# ===== 7. Auxiliary function to compute hourly averages of key results =====
 # we are interested in studying the hourly profile of some key variables
 # so we will compute hourly averages for each iteration on these variables
 
 function calculate_hourly_averages(data::Vector{Float64}, hours_per_day::Int=24)
-    @assert length(data) % hours_per_day == 0
+    @assert length(data) % hours_per_day == 0 
 
     # turn input vector to a matrix of (24 × num_days)
     matrix_days_hours = reshape(data, hours_per_day, :)
@@ -216,7 +238,7 @@ function calculate_hourly_averages(data::Vector{Float64}, hours_per_day::Int=24)
     return vec(mean(matrix_days_hours, dims=2))
 end
 
-# ===== xx. Auxiliary function to compute monthly averages of key results =====
+# ===== 8. Auxiliary function to compute monthly averages of key results =====
 # we are interested in studying the monthly profile of some key variables
 # so we will compute monthly averages for each iteration on these variables
 
