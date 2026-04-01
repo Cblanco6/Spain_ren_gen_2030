@@ -10,10 +10,18 @@ using KernelDensity
 using StatsBase
 using Printf
 
-
-# load all necessary inputs:(corregir rutas)
-technical_df = CSV.read("technical_params.csv", DataFrame)
-technical = NamedTuple(technical_df[1, :])
+scenario_params = DataFrame(
+    scenario = ["baseline", "nuclear", "optimistic", "climate change"],
+    elas_anomaly          = [1.0, 1.0, 2.0, 1.0],
+    min_ccgas_gen_anomaly = [1.0, 1.0, 0.5, 1.0],
+    min_cogen_gen_anomaly = [1.0, 1.0, 0.5, 1.0],
+    min_oil_gen_anomaly   = [1.0, 1.0, 0.5, 1.0],
+    hydro_anomaly         = [1.0, 1.0, 1.0, 0.8],
+    ph_eff_anomaly        = [1.0, 1.0, 1.025, 1.0],
+    batt_eff_anomaly      = [1.0, 1.0, 1.025, 1.0],
+    other_ren_max_anomaly = [1.0, 1.0, 1.2, 1.0],
+    ren_waste_max_anomaly = [1.0, 1.0, 1.2, 1.0]
+)
 
 
 # ===== Monte Carlo set up =====
@@ -49,32 +57,64 @@ results_list[i] = (
 
 
 # ===== Monte Carlo Simulation Loop =====
-
-# idea de estructura
+num_iterations = 10000
 
 for i in 1:num_iterations
 
-    # 1. sample time window
-    new_data, year, day_start = sample_time_window(hourly_data, baseline_years)
+    @printf("Running iteration %d of %d\n", i, num_iterations)
 
-    # 2. sample deltas
-    delta_draws = sample_deltas(variables_to_draw, sampling_data)
+    # 1. Sample time window
+    sampled_window_data, year, day_start = sample_time_window(hourly_data, baseline_years)
 
-    # 3. apply deltas
-    apply_deltas!(new_data, delta_draws)
+    # 2. Sample deltas
+    delta_draws = sample_deltas(variables_to_draw, deltas_dictionary)
 
-    # 4. compute params (ja ho tens fora)
-    params = compute_iteration_params(...)
+    # 3. Apply deltas to data
+    apply_deltas!(sampled_window_data, delta_draws)
 
-    # 5. solve model
-    results = dispatch_electricity_market(...)
+    # 4. Compute iteration-specific parameters
+    iteration_params = compute_iteration_params(
+        projected = sampled_window_data,    # hourly projected data for 2030
+        technical = technical_params ,      # technical parameters shared across scenarios
+        scenario  = scenario_params,        # scenario-specific parameters
+        )
 
-    # 6. post-process
-    hourly = calculate_hourly_averages(...)
-    monthly = calculate_monthly_averages(...)
+    # 5. Solve model
+    results = dispatch_electricity_market(
+        sampled_data,
+        fixed_data_new,
+        params.interconnectors_delta,
+        loss_factor = params.loss_factor
+    )
 
-    # 7. store
-    results_list[i] = (...)
+    # 6. Post-processing
+    hourly_results = (
+        price = calculate_hourly_averages(results["price"]),
+        batt_out = calculate_hourly_averages(results["battery_gen"]),
+        ph_out = calculate_hourly_averages(results["pumped_hydro_gen"]),
+        emissions = calculate_hourly_averages(results["direct_emissions"]),
+        ren_share = calculate_hourly_averages(results["share_renewable_gen"])
+    )
+
+    monthly_results = (
+        price = calculate_monthly_averages(results["price"]),
+        batt_out = calculate_monthly_averages(results["battery_gen"]),
+        ph_out = calculate_monthly_averages(results["pumped_hydro_gen"]),
+        emissions = calculate_monthly_averages(results["direct_emissions"]),
+        ren_share = calculate_monthly_averages(results["share_renewable_gen"])
+    )
+
+    # 7. Store results
+    results_list[i] = (
+        iteration = i,
+        year = year,
+        day_start = day_start,
+        deltas = delta_draws,
+        inputs = params,
+        results = results["summary"],   # o lo que corresponda
+        monthly = monthly_results,
+        hourly = hourly_results
+    )
 
 end
 

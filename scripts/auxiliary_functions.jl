@@ -19,7 +19,11 @@
 # This process ensures more variability on our moulds, so more robustness of results.
 # This function creates the mentioned "mould" from historical data, which we call sampled_window_data.
 
-function sample_time_window(hourly_data, baseline_years)
+function sample_time_window(
+    hourly_data::DataFrame,
+    baseline_years::Vector{Int}
+    )
+
     year = rand(baseline_years)
     day_start = rand(1:21)
 
@@ -42,7 +46,11 @@ end
 # This function is run once and creates a dictionary with deltas and weights 
 # for each variable, avoiding having to filter the projections_delta in each iteration.
 
-function build_deltas_dictionary(projection_deltas, variables_to_draw)
+function build_deltas_dictionary(
+    projection_deltas::DataFrame,
+    variables_to_draw::Vector{String}
+    )
+    
     deltas_dictionary = Dict{String, Tuple{Vector{Float64}, Weights}}()
 
     for var in variables_to_draw
@@ -52,6 +60,7 @@ function build_deltas_dictionary(projection_deltas, variables_to_draw)
     
     return deltas_dictionary 
 end
+
 
 # The deltas_dictionary will be of the form: 
 # "variable_name1" => ([v1_delta_1, v1_delta_2], Weights([v1_weight_1, v1_weight_2])),  
@@ -65,7 +74,11 @@ end
 # historical data ("mould") to simulate a possible realization of 2030 in Spain. 
 # This function specifies how this sampling process is done for different kinds of variables.
 
-function sampling_procedure(deltas::Vector{Float64}, weights::Weights, var::String)
+function sampling_procedure(
+    deltas::Vector{Float64}, 
+    weights::Weights, 
+    var::String
+    )
 
     # Special case for coal capacity (100% sure of phase out)
     if var == "coal_cap_gw"
@@ -127,7 +140,11 @@ end
 # This function applies the sampling_procedure function to each of the variables in variables_to_draw.
 # Returns another dictionary, delta draws, with the specific values to project the "mould" to 2030.
 
-function sample_deltas(variables_to_draw, deltas_dictionary)
+function sample_deltas(
+    variables_to_draw::Vector{String},
+    deltas_dictionary::Dict{String, Tuple{Vector{Float64}, Weights}}
+    )
+    
     delta_draws = Dict{String, Float64}()
 
     for var in variables_to_draw
@@ -152,13 +169,14 @@ end
 # Returns the "hypothetical 2030 realization" to input into the model in each iteration.
 # The ! at the end of the name is a Julia convention to signal that some of the arguments will be modified
 
-function apply_deltas!(sampled_window_data, delta_draws)
+function apply_deltas!(
+    sampled_window_data::DataFrame,
+    delta_draws::Dict{String, Float64}
+    )
     for (var, delta) in delta_draws
         sampled_window_data[!, var] .*= (1 + delta)
     end
 end
-
-
 
 # ===== 6. Auxiliary function to define iteration-specific parameters =====
 # Since the model is designed to be solved for many possible realizations of the future,
@@ -228,7 +246,11 @@ end
 # we are interested in studying the hourly profile of some key variables
 # so we will compute hourly averages for each iteration on these variables
 
-function calculate_hourly_averages(data::Vector{Float64}, hours_per_day::Int=24)
+function calculate_hourly_averages(
+    data::Vector{Float64}, 
+    hours_per_day::Int=24
+    )
+
     @assert length(data) % hours_per_day == 0 
 
     # turn input vector to a matrix of (24 × num_days)
@@ -242,7 +264,11 @@ end
 # we are interested in studying the monthly profile of some key variables
 # so we will compute monthly averages for each iteration on these variables
 
-function calculate_monthly_averages(data::Vector{Float64}, hours_per_month_span::Int=168)
+function calculate_monthly_averages(
+    data::Vector{Float64}, 
+    hours_per_month_span::Int=168
+    )
+    
     @assert length(data) % hours_per_month_span == 0
 
     # turn input vector to a matrix of (168 × num_months)
