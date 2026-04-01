@@ -20,7 +20,7 @@
 # This function creates the mentioned "mould" from historical data, which we call sampled_window_data.
 
 function sample_time_window(
-    hourly_data::DataFrame,
+    historical_data::DataFrame,
     baseline_years::Vector{Int}
     )
 
@@ -31,7 +31,7 @@ function sample_time_window(
         row.year == year &&
         row.day >= day_start &&
         row.day < day_start + 7,
-        hourly_data
+        historical_data
     )
 
     return sampled_window_data, year, day_start
@@ -276,4 +276,121 @@ function calculate_monthly_averages(
 
     # compute averages per columns (months) and return as a vector
     return vec(mean(matrix_months_hours, dims=1))
+end
+
+
+
+# ===== 8. Auxiliary function to store results of each iteration =====
+# This function defines how we store all the results in the loop 
+
+function store_results!(
+    iter::Int,
+    scen::String,
+    results::Dict,                 # the output of dispatch_electricity_market
+    delta_draws::NamedTuple,      
+    projected_data::DataFrame,   
+    main_results::Dict,            # pre-allocated container to save main results
+    hourly_profiles::Dict,         # pre-allocated container to save hourly profiles
+    monthly_profiles::Dict,        # pre-allocated container to save monthly profiles
+    delta_draws_container::Dict,   # pre-allocated container to save the specific delta draws for each iteration 
+    inputs_realized::Dict          # pre-allocated container to save demand, capacity and costs inputed to the model in each iteration
+    )
+
+    # factor de anualización según número de filas del sample
+    annual_factor = 365.25 * 24 / nrow(projected_data)
+
+    # ===== main_results =====
+    main_results[scen][iter] = (
+        iteration = iter,
+        avg_price = results["avg_price"],
+        max_price = results["max_price"],
+        std_price = results["std_price"],
+        total_demand = sum(results["total_demand"]) * annual_factor,
+        total_generation = sum(results["total_generation"]) * annual_factor,
+        combined_cycle_gen = sum(results["combined_cycle_gen"]) * annual_factor,
+        cogeneration_gen = sum(results["cogeneration_gen"]) * annual_factor,
+        nuclear_gen = sum(results["nuclear_gen"]) * annual_factor,
+        other_non_renewable_gen = (sum(results["coal_gen"]) + sum(results["gas_turbine_gen"]) +
+                                   sum(results["vapor_turbine_gen"]) + sum(results["diesel_gen"]) +
+                                   sum(results["non_renewable_waste_gen"])) * annual_factor,
+        conventional_hydro_gen = sum(results["conventional_hydro_gen"]) * annual_factor,
+        pumped_hydro_gen = sum(results["pumped_hydro_gen"]) * annual_factor,
+        solar_pv_gen = sum(results["solar_pv_gen"]) * annual_factor,
+        solar_thermal_gen = sum(results["solar_thermal_gen"]) * annual_factor,
+        wind_gen = sum(results["wind_gen"]) * annual_factor,
+        batteries_gen = sum(results["battery_gen"]) * annual_factor,
+        other_renewable_gen = (sum(results["run_of_river_hydro_gen"]) +
+                               sum(results["renewable_waste_gen"]) +
+                               sum(results["other_renewable_gen"])) * annual_factor,
+        total_imports = (sum(results["imports_FRA"]) + sum(results["imports_POR"]) + sum(results["imports_MOR"])) * annual_factor,
+        total_exports = (sum(results["exports_FRA"]) + sum(results["exports_POR"]) + sum(results["exports_MOR"])) * annual_factor,
+        consumer_surplus = sum(results["consumer_surplus"]) * annual_factor,
+        producer_surplus = sum(results["producer_surplus"]) * annual_factor,
+        net_welfare = sum(results["net_welfare"]) * annual_factor,
+        min_share_renewable_gen = minimum(results["share_renewable_gen"]),
+        mean_share_renewable_gen = mean(results["share_renewable_gen"]),
+        median_share_renewable_gen = median(results["share_renewable_gen"]),
+        max_share_renewable_gen = maximum(results["share_renewable_gen"]),
+        min_non_renewable_gen = mean(results["min_non_renewable_gen"]),
+        lifecycle_emissions = sum(results["lifecycle_emissions"]),
+        direct_emissions = sum(results["direct_emissions"]),
+        curt_solar_pv = results["curtailment_solar_pv"],
+        curt_solar_thermal = results["curtailment_solar_thermal"],
+        curt_wind = results["curtailment_wind"],
+        battery_charge = results["pumped_hydro_pumping"],
+        battery_gen = results["battery_gen"],
+        battery_storage = results["pumped_hydro_storage"],
+        low_carbon_gen = results["nuclear_gen"] + sum(results["renewable_waste_gen"]) + sum(results["other_renewable_gen"])
+    )
+
+    # ===== hourly_profiles =====
+    hourly_profiles[scen][iter] = (
+        price = calculate_hourly_averages(results["price"]),
+        batt_out = calculate_hourly_averages(results["battery_gen"]),
+        ph_out = calculate_hourly_averages(results["pumped_hydro_gen"]),
+        emissions = calculate_hourly_averages(results["direct_emissions"]),
+        ren_share = calculate_hourly_averages(results["share_renewable_gen"])
+    )
+
+    # ===== monthly_profiles =====
+    monthly_profiles[scen][iter] = (
+        price = calculate_monthly_averages(results["price"]),
+        batt_out = calculate_monthly_averages(results["battery_gen"]),
+        ph_out = calculate_monthly_averages(results["pumped_hydro_gen"]),
+        emissions = calculate_monthly_averages(results["direct_emissions"]),
+        ren_share = calculate_monthly_averages(results["share_renewable_gen"])
+    )
+
+    # ===== delta_draws =====
+    delta_draws_container[scen][iter] = delta_draws
+
+    # ===== inputs_realized =====
+    inputs_realized[scen][iter] = (
+        residential_demand_mwh = mean(projected_data.residential_demand_mwh),
+        commercial_demand_mwh = mean(projected_data.commercial_demand_mwh),
+        industrial_demand_mwh = mean(projected_data.industrial_demand_mwh),
+        coal_cap_mw = mean(projected_data.coal_cap_mw),
+        combined_cycle_cap_mw = mean(projected_data.combined_cycle_cap_mw),
+        gas_turbine_cap_mw = mean(projected_data.gas_turbine_cap_mw),
+        vapor_turbine_cap_mw = mean(projected_data.vapor_turbine_cap_mw),
+        cogeneration_cap_mw = mean(projected_data.cogeneration_cap_mw),
+        diesel_cap_mw = mean(projected_data.diesel_cap_mw),
+        nonrenewable_waste_cap_mw = mean(projected_data.nonrenewable_waste_cap_mw),
+        nuclear_cap_mw = mean(projected_data.nuclear_cap_mw),
+        conventional_hydro_cap_mw = mean(projected_data.conventional_hydro_cap_mw),
+        run_of_river_hydro_cap_mw = mean(projected_data.run_of_river_hydro_cap_mw),
+        pumped_hydro_cap_mw = mean(projected_data.pumped_hydro_cap_mw),
+        solar_pv_cap_mw = mean(projected_data.solar_pv_cap_mw),
+        solar_thermal_cap_mw = mean(projected_data.solar_thermal_cap_mw),
+        wind_cap_mw = mean(projected_data.wind_cap_mw),
+        other_renewable_cap_mw = mean(projected_data.other_renewable_cap_mw),
+        renewable_waste_cap_mw = mean(projected_data.renewable_waste_cap_mw),
+        batteries_cap_mw = mean(projected_data.batteries_cap_mw),
+        cost_coal_eur_mwh = mean(projected_data.cost_coal_eur_mwh),
+        cost_gas_eur_mwh = mean(projected_data.cost_gas_eur_mwh),
+        cost_diesel_eur_mwh = mean(projected_data.cost_diesel_eur_mwh),
+        cost_uranium_eur_mwh = mean(projected_data.cost_uranium_eur_mwh),
+        eu_ets_price_eur_tco2 = mean(projected_data.eu_ets_price_eur_tco2)
+    )
+
 end
