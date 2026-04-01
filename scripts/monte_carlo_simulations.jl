@@ -27,16 +27,16 @@ technology_data = CSV.read(joinpath(project_root, "data", "technology_data.csv")
 # FALTA NUCLEAR cap y batteries, lo retomamos luego!
 
 scenarios = DataFrame(
-    scenario_name         = ["baseline", "nuclear", "optimistic", "climate change"],
-    elas_anomaly          = [1.0, 1.0, 2.0, 1.0],
-    min_ccgas_gen_anomaly = [1.0, 1.0, 0.5, 1.0],
-    min_cogen_gen_anomaly = [1.0, 1.0, 0.5, 1.0],
-    min_oil_gen_anomaly   = [1.0, 1.0, 0.5, 1.0],
-    hydro_anomaly         = [1.0, 1.0, 1.0, 0.8],
-    ph_eff_anomaly        = [1.0, 1.0, 1.025, 1.0],
-    batt_eff_anomaly      = [1.0, 1.0, 1.025, 1.0],
-    other_ren_max_anomaly = [1.0, 1.0, 1.2, 1.0],
-    ren_waste_max_anomaly = [1.0, 1.0, 1.2, 1.0]
+    scenario_name         = ["baseline",       "nuclear",      "optimistic",  "climate change"],
+    elas_anomaly          = [1.0,             1.0,            2.0,            1.0],
+    min_ccgas_gen_anomaly = [1.0,             1.0,            0.5,            1.0],
+    min_cogen_gen_anomaly = [1.0,             1.0,            0.5,            1.0],
+    min_oil_gen_anomaly   = [1.0,             1.0,            0.5,            1.0],
+    hydro_anomaly         = [1.0,             1.0,            1.0,            0.8],
+    ph_eff_anomaly        = [1.0,             1.0,            1.025,          1.0],
+    batt_eff_anomaly      = [1.0,             1.0,            1.025,          1.0],
+    other_ren_max_anomaly = [1.0,             1.0,            1.2,            1.0],
+    ren_waste_max_anomaly = [1.0,             1.0,            1.2,            1.0]
 )
 
 scenario_names = scenarios.scenario_name
