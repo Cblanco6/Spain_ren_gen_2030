@@ -301,12 +301,17 @@ function dispatch_electricity_market(
         # Aggregated generation
         non_ren_gen       = [sum(q_vals[t, 1:8])  for t in 1:T]
         ren_gen           = [sum(q_vals[t, 9:17]) for t in 1:T]
+        low_c_gen         = [sum(q_vals[t, 8:17]) for t in 1:T]
         total_gen         = ren_gen .+ non_ren_gen
         share_ren_gen     = ren_gen ./ total_gen
 
         # Pumped hydro storage
         ph_in_vals        = JuMP.value.(ph_in)
         ph_stock_vals     = JuMP.value.(ph_stock)
+
+        # Batteries
+        batt_in_vals        = JuMP.value.(batt_in)
+        batt_stock_vals     = JuMP.value.(batt_stock)
 
         # Minimum non-renewable generation (constraint variable)
         min_non_ren_vals  = JuMP.value.(min_non_ren_gen)
@@ -370,19 +375,22 @@ function dispatch_electricity_market(
             "nuclear_gen"               => nuclear,
             "conventional_hydro_gen"    => conv_hydro,
             "run_of_river_hydro_gen"    => river_hydro,
-            "pumped_hydro_gen"          => pumped_hydro,
             "pumped_hydro_pumping"      => ph_in_vals,
+            "pumped_hydro_gen"          => pumped_hydro,
             "pumped_hydro_storage"      => ph_stock_vals,
             "solar_pv_gen"              => solar_pv,
             "solar_thermal_gen"         => solar_t,
             "wind_gen"                  => wind,
             "other_renewable_gen"       => other_r,
             "renewable_waste_gen"       => ren_w,
+            "battery_charge"            => batt_in_vals,
             "battery_gen"               => batt_gen,
+            "battery_storage"           => batt_stock_vals,
 
             # Aggregated generation
             "total_generation"          => total_gen,
             "renewable_gen"             => ren_gen,
+            "low_carbon_gen"            => low_c_gen,
             "non_renewable_gen"         => non_ren_gen,
             "share_renewable_gen"       => share_ren_gen,
             "min_non_renewable_gen"     => share_min_non_ren,
@@ -451,19 +459,22 @@ function dispatch_electricity_market(
         "nuclear_gen"               => fill(-1.0, T),
         "conventional_hydro_gen"    => fill(-1.0, T),
         "run_of_river_hydro_gen"    => fill(-1.0, T),
-        "pumped_hydro_gen"          => fill(-1.0, T),
         "pumped_hydro_pumping"      => fill(-1.0, T),
+        "pumped_hydro_gen"          => fill(-1.0, T),
         "pumped_hydro_storage"      => fill(-1.0, T),
         "solar_pv_gen"              => fill(-1.0, T),
         "solar_thermal_gen"         => fill(-1.0, T),
         "wind_gen"                  => fill(-1.0, T),
         "other_renewable_gen"       => fill(-1.0, T),
         "renewable_waste_gen"       => fill(-1.0, T),
+        "battery_charge"            => fill(-1.0, T),
         "battery_gen"               => fill(-1.0, T),
+        "battery_storage"           => fill(-1.0, T),
 
         # Aggregated generation
         "total_generation"          => fill(-1.0, T),
         "renewable_gen"             => fill(-1.0, T),
+        "low_carbon_gen"            => fill(-1.0, T),
         "non_renewable_gen"         => fill(-1.0, T),
         "share_renewable_gen"       => fill(-1.0, T),
         "min_non_renewable_gen"     => fill(-1.0, T),
