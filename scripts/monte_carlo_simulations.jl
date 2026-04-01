@@ -10,8 +10,24 @@ using KernelDensity
 using StatsBase
 using Printf
 
+# ===== Monte Carlo Set up =====
+
+# define project location
+project_root = dirname(@__DIR__)
+
+# load the function that models the electricity market and the other auxiliary functions
+include(joinpath(project_root, "scripts", "model_electricity_market.jl"))
+include(joinpath(project_root, "scripts", "auxiliar_functions.jl"))
+
+# load the fixed datasets
+hourly_data = CSV.read(joinpath(project_root, "data", "historical_data.csv"), DataFrame)
+technology_data = CSV.read(joinpath(project_root, "data", "technology_data.csv"), DataFrame)
+
+# define the scenarios
+<<FALTA NUCLEAR cap y batteries!!>>
+
 scenario_params = DataFrame(
-    scenario = ["baseline", "nuclear", "optimistic", "climate change"],
+    scenario              = ["baseline", "nuclear", "optimistic", "climate change"],
     elas_anomaly          = [1.0, 1.0, 2.0, 1.0],
     min_ccgas_gen_anomaly = [1.0, 1.0, 0.5, 1.0],
     min_cogen_gen_anomaly = [1.0, 1.0, 0.5, 1.0],
@@ -24,8 +40,7 @@ scenario_params = DataFrame(
 )
 
 
-# ===== Monte Carlo set up =====
-# Pre-setup phase (run once)
+# define monte carlo parameters
 baseline_years = [2023, 2024]
 variables_to_draw = [
     "residential_demand_gwh", "commercial_demand_gwh", "industrial_demand_gwh", 
@@ -34,14 +49,6 @@ variables_to_draw = [
     "solar_pv_cap_gw", "solar_thermal_cap_gw", "wind_cap_gw", "other_renewable_cap_gw", "renewable_waste_cap_gw", "batteries_cap_gw",
     "cost_coal_eur_gwh", "cost_gas_eur_gwh", "cost_diesel_eur_gwh", "cost_uranium_eur_gwh", "eu_ets_price_eur_tco2",
 ]
-
-# Pre-compute sampling data (so it is not done for each iteration)
-sampling_data = Dict{String, Tuple{Vector{Float64}, Weights}}()
-for var in variables_to_draw
-    subset = projection_deltas[projection_deltas.variable .== var, :]
-    sampling_data[var] = (subset.delta, Weights(subset.weight))
-end
-
 
 
 # Pre-allocate containers
