@@ -7,6 +7,50 @@ using Statistics
 using JuMP
 using Gurobi
 
+
+# define technical parameters (model calibration)
+technical = (
+    elas_residential = 0.015,
+    elas_commercial = 0.03,
+    elas_industrial = 0.05,
+    grid_loss_factor = 0.015,
+    coal_min = 0.15,
+    coal_max = 0.65,
+    coal_ramp = 0.05,
+    ccgt_min = 0.05,
+    ccgt_max = 1.0,
+    ccgt_ramp = 0.25,
+    cogen_min = 0.15,
+    cogen_max = 0.6,
+    cogen_ramp = 0.1,
+    diesel_min = 0.2,
+    non_ren_waste_max = 0.6,
+    non_ren_waste_ramp = 0.01,
+    conv_hydro_ramp = 0.1,
+    ror_lo_high = 0.3,
+    ror_hi_high = 0.5,
+    ror_lo_med_high = 0.2,
+    ror_hi_med_high = 0.4,
+    ror_lo_med_low = 0.15,
+    ror_hi_med_low = 0.3,
+    ror_lo_low = 0.1,
+    ror_hi_low = 0.15,
+    ror_ramp = 0.2,
+    ph_storage_cap_gwh = 50.0,
+    ph_roundtrip_eff = 0.75,
+    batt_roundtrip_eff = 0.9,
+    batt_decay = 0.001,
+    batt_duration = 4.0,
+    other_ren_min = 0.25,
+    other_ren_max = 0.6,
+    other_ren_ramp = 0.05,
+    ren_waste_min = 0.0,
+    ren_waste_max = 0.65,
+    ren_waste_ramp = 0.05
+)
+
+
+
 # ===== Definition of the model: dispatch_electricity_market function =====
 function dispatch_electricity_market(
     projected::DataFrame,        # hourly projected data for 2030
