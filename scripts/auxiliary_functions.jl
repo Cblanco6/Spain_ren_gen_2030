@@ -81,11 +81,7 @@ function sampling_procedure(
     var::String
     )
 
-    # Special case for coal capacity (100% sure of phase out)
-    if var == "coal_cap_gw"
-        return deltas[1]
-    end
-
+    # ESTO QUIZÁS LO HEMOS DE QUITAR COMPLETAMENTE (ns si lo seguimos modelando)
     # Discrete sampling for interconnectors capacity
     if startswith(var, "imp_") || startswith(var, "exp_")
         normalized_weights = weights ./ sum(weights)
@@ -143,16 +139,40 @@ end
 
 function sample_deltas(
     variables_to_draw::Vector{String},
-    deltas_dictionary::Dict{String, Tuple{Vector{Float64}, Weights}}
-    )
+    deltas_dictionary::Dict{String, Tuple{Vector{Float64}, Weights}},
+    scenario::NamedTuple
+)
     
     delta_draws = Dict{String, Float64}()
 
     for var in variables_to_draw
-        # retive deltas and weights from the deltas_dictionary
+
+        # 1. Draw provisional delta
         deltas, weights = deltas_dictionary[var]
-        # apply sampling_procedure to draw a specific delta for each variable
-        delta_draws[var] = sampling_procedure(deltas, weights, var)
+        delta_draw = sampling_procedure(deltas, weights, var)
+
+        # 2. Apply scenario adjustments
+        delta_adjusted = delta_draw
+
+        # Coal phase-out
+        if var == "coal_cap_mw" && scenario.coal_phase_out
+            delta_adjusted = -1.0
+
+        # Nuclear: avoid phase-out
+        elseif var == "nuclear_cap_mw" && !scenario.nuclear_phase_out
+            delta_adjusted = 0.0
+
+        # Batteries scaling
+        elseif var == "batteries_cap_mw"
+            delta_adjusted *= scenario.battery_cap_multiplier
+
+        # Renewables scaling 
+        elseif occursin("_cap_mw", var) && startswith(var, "ren")
+            delta_adjusted *= scenario.renewable_cap_multiplier
+        end
+
+        # 3. Store final delta
+        delta_draws[var] = delta_adjusted
     end
 
     return delta_draws

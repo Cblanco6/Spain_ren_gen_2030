@@ -27,22 +27,36 @@ projection_deltas_data = CSV.read(joinpath(project_root, "data", "projection_del
 # define the scenarios
 # FALTA NUCLEAR cap y batteries, lo retomamos luego!
 
+# Revisar:
+# 1. Anomalies tiene sentido en elasticity y hydro.
+# 2. Sobre el resto: todo lo que es minimum o maximum generation constraints, así como efficiency parameters
+#    en vez de dejar un valor a technical_params y un "anomaly" aquí, dejemos sólo un valor aquí 
+#    (si cambian entre escenarios) o sólo el valor en technical_params (si no cambian entre escenarios)
+# 3. He añadido 4 parámetros más de modo que aquí se centralize TODO lo que cambia entre escenarios
+
 scenarios = DataFrame(
     scenario_name         = ["baseline",       "nuclear",      "optimistic",  "climate change"],
+    
     elas_anomaly          = [1.0,             1.0,            2.0,            1.0],
+    hydro_anomaly         = [1.0,             1.0,            1.0,            0.8],
+
     min_ccgas_gen_anomaly = [1.0,             1.0,            0.5,            1.0],
     min_cogen_gen_anomaly = [1.0,             1.0,            0.5,            1.0],
     min_oil_gen_anomaly   = [1.0,             1.0,            0.5,            1.0],
-    hydro_anomaly         = [1.0,             1.0,            1.0,            0.8],
+    other_ren_max_anomaly = [1.0,             1.0,            1.2,            1.0],
+    ren_waste_max_anomaly = [1.0,             1.0,            1.2,            1.0],
+
     ph_eff_anomaly        = [1.0,             1.0,            1.025,          1.0],
     batt_eff_anomaly      = [1.0,             1.0,            1.025,          1.0],
-    other_ren_max_anomaly = [1.0,             1.0,            1.2,            1.0],
-    ren_waste_max_anomaly = [1.0,             1.0,            1.2,            1.0]
+
+    coal_phase_out        = [true,            true,           true,          true],
+    nuclear_phase_out     = [true,            false,          true,          true],
+    batt_cap_multiplier   = [1.0,             0.75,           1.25,           1.0],
+    ren_cap_multiplier    = [1.0,             0.9,            1.1,            1.0]
 )
 
 scenario_names = scenarios.scenario_name
 scenario_dict = Dict(scen => scenarios[i, :] for (i, scen) in enumerate(scenario_names))
-
 
 
 # define monte carlo parameters
@@ -55,6 +69,9 @@ variables_to_draw = [
     "solar_pv_cap_gw", "solar_thermal_cap_gw", "wind_cap_gw", "other_renewable_cap_gw", "renewable_waste_cap_gw", "batteries_cap_gw",
     "cost_coal_eur_gwh", "cost_gas_eur_gwh", "cost_diesel_eur_gwh", "cost_uranium_eur_gwh", "eu_ets_price_eur_tco2",
 ]
+
+# run build_deltas_dictionary once to create the dictionary
+deltas_dictionary = build_deltas_dictionary(projection_deltas_data, variables_to_draw)
 
 
 
@@ -77,9 +94,6 @@ for scen in scenario_names
     inputs_realized[scen]  = Vector{NamedTuple}(undef, num_iterations)
 end
 
-# run build_deltas_dictionary once to create the dictionary
-deltas_dictionary = build_deltas_dictionary(projection_deltas_data, variables_to_draw)
-
 for scen in scenario_names
 
     # define scenario-specific parameters
@@ -93,7 +107,11 @@ for scen in scenario_names
         sampled_window_data, year, day_start = sample_time_window(historical_data, baseline_years)
 
         # 2. Sample deltas for this iteration
-        delta_draws_iter = sample_deltas(variables_to_draw, deltas_dictionary)
+        delta_draws_iter = sample_deltas(
+            variables_to_draw,      # vector of variables to be scaled
+            deltas_dictionary,      # dictionary with projection deltas per variable to draw
+            scenario_params,        # scenario-specific parameters with specific rules to modify some of the delta draws
+            )
 
         # 3. Apply deltas to the sampled data
         apply_deltas!(sampled_window_data, delta_draws_iter)
@@ -114,7 +132,7 @@ for scen in scenario_names
             iteration  = iteration_params        # iteration-specific parameters
             )
 
-        # 7. Store all the results 
+        # 6. Store all the results 
         store_results!(
             # these are the id of each iteration run 
             scen, 
