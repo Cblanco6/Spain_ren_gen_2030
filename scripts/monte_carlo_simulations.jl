@@ -20,8 +20,9 @@ include(joinpath(project_root, "scripts", "model_electricity_market.jl"))
 include(joinpath(project_root, "scripts", "auxiliar_functions.jl"))
 
 # load the fixed datasets
-historical_data = CSV.read(joinpath(project_root, "data", "historical_data.csv"), DataFrame)
-technology_data = CSV.read(joinpath(project_root, "data", "technology_data.csv"), DataFrame)
+historical_data        = CSV.read(joinpath(project_root, "data", "historical_data.csv"), DataFrame)
+technology_data        = CSV.read(joinpath(project_root, "data", "technology_data.csv"), DataFrame)
+projection_deltas_data = CSV.read(joinpath(project_root, "data", "projection_deltas_data.csv"), DataFrame)
 
 # define the scenarios
 # FALTA NUCLEAR cap y batteries, lo retomamos luego!
@@ -76,6 +77,8 @@ for scen in scenario_names
     inputs_realized[scen]  = Vector{NamedTuple}(undef, num_iterations)
 end
 
+# run build_deltas_dictionary once to create the dictionary
+deltas_dictionary = build_deltas_dictionary(projection_deltas_data, variables_to_draw)
 
 for scen in scenario_names
 

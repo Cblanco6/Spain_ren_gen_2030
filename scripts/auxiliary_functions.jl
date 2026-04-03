@@ -310,55 +310,61 @@ function store_results!(
         min_price = results["min_price"],
         std_price = results["std_price"],
 
-        # Welfare
+        # Total welfare
         consumer_surplus = sum(results["consumer_surplus"]) * annual_factor,
         producer_surplus = sum(results["producer_surplus"]) * annual_factor,
-        total_cost       = sum(results["total_cost"]) * annual_factor,
-        net_welfare      = sum(results["net_welfare"]) * annual_factor,
+        total_cost       = sum(results["total_cost"])       * annual_factor,
+        net_welfare      = sum(results["net_welfare"])      * annual_factor,
 
-        # Demand
+        # Total demand
         residential_demand = sum(results["residential_demand"]) * annual_factor,
-        commercial_demand  = sum(results["commercial_demand"]) * annual_factor,
-        industrial_demand  = sum(results["industrial_demand"]) * annual_factor,
-        total_demand       = sum(results["total_demand"]) * annual_factor,
+        commercial_demand  = sum(results["commercial_demand"])  * annual_factor,
+        industrial_demand  = sum(results["industrial_demand"])  * annual_factor,
+        total_demand       = sum(results["total_demand"])       * annual_factor,
 
-        # Generation by technology
-        coal_gen                  = sum(results["coal_gen"]) * annual_factor,
-        combined_cycle_gen        = sum(results["combined_cycle_gen"]) * annual_factor,
-        gas_turbine_gen           = sum(results["gas_turbine_gen"]) * annual_factor,
-        vapor_turbine_gen         = sum(results["vapor_turbine_gen"]) * annual_factor,
-        cogeneration_gen          = sum(results["cogeneration_gen"]) * annual_factor,
-        diesel_gen                = sum(results["diesel_gen"]) * annual_factor,
+        # Total generation by technology
+        coal_gen                  = sum(results["coal_gen"])                * annual_factor,
+        combined_cycle_gen        = sum(results["combined_cycle_gen"])      * annual_factor,
+        gas_turbine_gen           = sum(results["gas_turbine_gen"])         * annual_factor,
+        vapor_turbine_gen         = sum(results["vapor_turbine_gen"])       * annual_factor,
+        cogeneration_gen          = sum(results["cogeneration_gen"])        * annual_factor,
+        diesel_gen                = sum(results["diesel_gen"])              * annual_factor,
         non_renewable_waste_gen   = sum(results["non_renewable_waste_gen"]) * annual_factor,
-        nuclear_gen               = sum(results["nuclear_gen"]) * annual_factor,
-        conventional_hydro_gen    = sum(results["conventional_hydro_gen"]) * annual_factor,
-        run_of_river_hydro_gen    = sum(results["run_of_river_hydro_gen"]) * annual_factor,
-        solar_pv_gen              = sum(results["solar_pv_gen"]) * annual_factor,
-        solar_thermal_gen         = sum(results["solar_thermal_gen"]) * annual_factor,
-        wind_gen                  = sum(results["wind_gen"]) * annual_factor,
-        other_renewable_gen       = sum(results["other_renewable_gen"]) * annual_factor,
-        renewable_waste_gen       = sum(results["renewable_waste_gen"]) * annual_factor,
+        nuclear_gen               = sum(results["nuclear_gen"])             * annual_factor,
+        conventional_hydro_gen    = sum(results["conventional_hydro_gen"])  * annual_factor,
+        run_of_river_hydro_gen    = sum(results["run_of_river_hydro_gen"])  * annual_factor,
+        solar_pv_gen              = sum(results["solar_pv_gen"])            * annual_factor,
+        solar_thermal_gen         = sum(results["solar_thermal_gen"])       * annual_factor,
+        wind_gen                  = sum(results["wind_gen"])                * annual_factor,
+        other_renewable_gen       = sum(results["other_renewable_gen"])     * annual_factor,
+        renewable_waste_gen       = sum(results["renewable_waste_gen"])     * annual_factor,
 
-        # Storage flows and stock
-        pumped_hydro_pumping = results["pumped_hydro_pumping"],
-        pumped_hydro_out     = sum(results["pumped_hydro_out"]) * annual_factor,
-        pumped_hydro_storage = results["pumped_hydro_storage"],
-        battery_charge       = results["battery_charge"],
-        battery_out          = sum(results["battery_out"]) * annual_factor,
-        battery_storage      = results["battery_storage"],
+        # Total storage flows
+        pumped_hydro_pumping = sum(results["pumped_hydro_pumping"]) * annual_factor,
+        pumped_hydro_out     = sum(results["pumped_hydro_out"])     * annual_factor,
+        battery_charge       = sum(results["battery_charge"])       * annual_factor,
+        battery_out          = sum(results["battery_out"])          * annual_factor,
 
-        # Aggregated generation
-        total_generation      = sum(results["total_generation"]) * annual_factor,
-        renewable_gen         = sum(results["renewable_gen"]) * annual_factor,
-        low_carbon_gen        = sum(results["low_carbon_gen"]) * annual_factor,
-        storage_out           = sum(results["storage_out"]) * annual_factor,
-        non_renewable_gen     = sum(results["non_renewable_gen"]) * annual_factor,
-        min_share_renewable_gen    = minimum(results["share_renewable_gen"]),
-        mean_share_renewable_gen   = mean(results["share_renewable_gen"]),
-        median_share_renewable_gen = median(results["share_renewable_gen"]),
-        max_share_renewable_gen    = maximum(results["share_renewable_gen"]),
-        share_low_carbon_gen       = mean(results["share_low_carbon_gen"]),
-        min_non_renewable_gen      = mean(results["min_non_renewable_gen"]),
+        # Average and maximum storage stock
+        mean_ph_stock        = mean(results["pumped_hydro_storage"]),
+        mean_batt_stock      = mean(results["battery_storage"]),
+        max_ph_stock         = maximum(results["pumped_hydro_storage"]),
+        max_batt_stock       = maximum(results["battery_storage"]),
+
+        # Aggregated total generation
+        total_generation     = sum(results["total_generation"])  * annual_factor,
+        renewable_gen        = sum(results["renewable_gen"])     * annual_factor,
+        low_carbon_gen       = sum(results["low_carbon_gen"])    * annual_factor,
+        non_renewable_gen    = sum(results["non_renewable_gen"]) * annual_factor,
+        storage_out          = sum(results["storage_out"])       * annual_factor,
+
+        # Statistical measures of aggregated generation
+        share_renewable_gen  = sum(results["renewable_gen"])         / sum(results["total_generation"]),
+        share_low_carbon_gen = sum(results["low_carbon_gen"])        / sum(results["total_generation"]),
+        share_storage_out    = sum(results["storage_out"])           / sum(results["total_generation"]),
+        share_min_non_ren    = sum(results["min_non_renewable_gen"]) / sum(results["total_generation"]),
+        min_share_ren        = minimum(results["share_renewable_gen"]),
+        max_share_ren        = maximum(results["share_renewable_gen"]),
 
         # Imports / exports
         imports_FRA = sum(results["imports_FRA"]) * annual_factor,
@@ -381,8 +387,10 @@ function store_results!(
     # ----- hourly_profiles -----
     hourly_profiles[scen][iter] = (
         price     = calculate_hourly_averages(results["price"]),
-        batt_out  = calculate_hourly_averages(results["battery_out"]),
+        ph_in     = calculate_hourly_averages(results["pumped_hydro_pumping"]),
         ph_out    = calculate_hourly_averages(results["pumped_hydro_out"]),
+        batt_in   = calculate_hourly_averages(results["battery_charge"]),
+        batt_out  = calculate_hourly_averages(results["battery_out"]),        
         emissions = calculate_hourly_averages(results["direct_emissions"]),
         ren_share = calculate_hourly_averages(results["share_renewable_gen"]),
         lc_share  = calculate_hourly_averages(results["share_low_carbon_gen"])
@@ -391,8 +399,10 @@ function store_results!(
     # ----- monthly_profiles -----
     monthly_profiles[scen][iter] = (
         price     = calculate_monthly_averages(results["price"]),
-        batt_out  = calculate_monthly_averages(results["battery_gen"]),
-        ph_out    = calculate_monthly_averages(results["pumped_hydro_gen"]),
+        ph_in     = calculate_monthly_averages(results["pumped_hydro_pumping"]),
+        ph_out    = calculate_monthly_averages(results["pumped_hydro_out"]),
+        batt_in   = calculate_monthly_averages(results["battery_charge"]),
+        batt_out  = calculate_monthly_averages(results["battery_out"]),     
         emissions = calculate_monthly_averages(results["direct_emissions"]),
         ren_share = calculate_monthly_averages(results["share_renewable_gen"]),
         lc_share  = calculate_monthly_averages(results["share_low_carbon_gen"])

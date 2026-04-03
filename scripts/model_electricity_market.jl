@@ -301,15 +301,17 @@ function dispatch_electricity_market(
         other_r           = q_vals[:, 14]
         ren_w             = q_vals[:, 15]
         pumped_hydro      = q_vals[:, 16]
-        batt_gen          = q_vals[:, 17]
+        batteries         = q_vals[:, 17]
 
         # Aggregated generation
         non_ren_gen       = [sum(q_vals[t, 1:8])  for t in 1:T]
         ren_gen           = [sum(q_vals[t, 9:15]) for t in 1:T]
         low_c_gen         = [sum(q_vals[t, 8:15]) for t in 1:T]
+        sto_out           = [sum(q_vals[t, 16:17]) for t in 1:T]
         total_gen         = ren_gen .+ non_ren_gen
         share_ren_gen     = ren_gen ./ total_gen
         share_lc_gen      = low_c_gen ./ total_gen
+        share_sto         = sto_out ./ total_gen
 
         # Pumped hydro
         ph_in_vals        = JuMP.value.(ph_in)
@@ -321,7 +323,6 @@ function dispatch_electricity_market(
 
         # Minimum non-renewable generation (constraint variable)
         min_non_ren_vals  = JuMP.value.(min_non_ren_gen)
-        share_min_non_ren = min_non_ren_vals ./ total_gen
 
         # Demand
         d_vals            = JuMP.value.(demand)
@@ -386,21 +387,24 @@ function dispatch_electricity_market(
             "wind_gen"                  => wind,
             "other_renewable_gen"       => other_r,
             "renewable_waste_gen"       => ren_w,
+
+            # Storage flows and stock
             "pumped_hydro_pumping"      => ph_in_vals,
-            "pumped_hydro_gen"          => pumped_hydro,
+            "pumped_hydro_out"          => pumped_hydro,
             "pumped_hydro_storage"      => ph_stock_vals,
             "battery_charge"            => batt_in_vals,
-            "battery_gen"               => batt_gen,
+            "battery_out"               => batteries,
             "battery_storage"           => batt_stock_vals,
 
             # Aggregated generation
             "total_generation"          => total_gen,
             "renewable_gen"             => ren_gen,
             "low_carbon_gen"            => low_c_gen,
+            "storage_out"               => sto_out,
             "non_renewable_gen"         => non_ren_gen,
+            "min_non_renewable_gen"     => min_non_ren_vals,
             "share_renewable_gen"       => share_ren_gen,
             "share_low_carbon_gen"      => share_lc_gen,            
-            "min_non_renewable_gen"     => share_min_non_ren,
 
             # Imports / exports
             "imports_FRA"               => imp_fra,
@@ -471,21 +475,24 @@ function dispatch_electricity_market(
         "wind_gen"                  => fill(-1.0, T),
         "other_renewable_gen"       => fill(-1.0, T),
         "renewable_waste_gen"       => fill(-1.0, T),
+        
+        # Storage flows and stock
         "pumped_hydro_pumping"      => fill(-1.0, T),
-        "pumped_hydro_gen"          => fill(-1.0, T),
+        "pumped_hydro_out"          => fill(-1.0, T),
         "pumped_hydro_storage"      => fill(-1.0, T),
         "battery_charge"            => fill(-1.0, T),
-        "battery_gen"               => fill(-1.0, T),
+        "battery_out"               => fill(-1.0, T),
         "battery_storage"           => fill(-1.0, T),
 
         # Aggregated generation
         "total_generation"          => fill(-1.0, T),
         "renewable_gen"             => fill(-1.0, T),
         "low_carbon_gen"            => fill(-1.0, T),
+        "storage_out"               => fill(-1.0, T),
         "non_renewable_gen"         => fill(-1.0, T),
+        "min_non_renewable_gen"     => fill(-1.0, T),
         "share_renewable_gen"       => fill(-1.0, T),
         "share_low_carbon_gen"      => fill(-1.0, T),
-        "min_non_renewable_gen"     => fill(-1.0, T),
 
         # Imports / exports
         "imports_FRA"               => fill(-1.0, T),
@@ -504,6 +511,7 @@ function dispatch_electricity_market(
         "curtailment_solar_thermal" => -1.0,
         "curtailment_wind"          => -1.0
         )
+        
     end
     return results
 end
