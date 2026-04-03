@@ -161,7 +161,8 @@ function dispatch_electricity_market(
     @constraint(model, [t=1:T], exports[t,3] == projected.exports_Morocco_gwh[t])
 
     # ----- Output constraints -----
-
+    
+    # Non-renewable sources ----
     # Coal
     @constraint(model, [t=1:T], quantity[t,1] >= technical.coal_min * projected.coal_cap_gw[t])
     @constraint(model, [t=1:T], quantity[t,1] <= technical.coal_max * projected.coal_cap_gw[t])
@@ -205,6 +206,7 @@ function dispatch_electricity_market(
         + technical.nonren_waste_min   * projected.nonrenewable_waste_cap_gw[t]
         + projected.nuclear_cap_gw[t]  * projected.nuclear_cap_factor[t])
 
+    # Renewable sources ----
     # Conventional hydro (weekly allocation)
     @constraint(model, [t=1:T], quantity[t,9] >= iteration.hydro_min_hourly[t])
     @constraint(model, [t=1:T], quantity[t,9] <= iteration.hydro_max_hourly[t])
@@ -220,6 +222,24 @@ function dispatch_electricity_market(
     @constraint(model, [t=2:T], quantity[t,10] - quantity[t-1,10] >= -technical.ror_ramp * projected.run_of_river_hydro_cap_gw[t])
     @constraint(model, [t=2:T], quantity[t,10] - quantity[t-1,10] <= +technical.ror_ramp * projected.run_of_river_hydro_cap_gw[t])
 
+    # Solar PV, solar thermal, wind (capacity factor bounds)
+    @constraint(model, [t=1:T], quantity[t,11] <= projected.solar_pv_cap_gw[t]      * projected.solar_pv_cap_factor[t])
+    @constraint(model, [t=1:T], quantity[t,12] <= projected.solar_thermal_cap_gw[t] * projected.solar_thermal_cap_factor[t])
+    @constraint(model, [t=1:T], quantity[t,13] <= projected.wind_cap_gw[t]          * projected.wind_cap_factor[t])
+
+    # Other renewables
+    @constraint(model, [t=1:T], quantity[t,14] >= technical.other_ren_min * projected.other_renewable_cap_gw[t])
+    @constraint(model, [t=1:T], quantity[t,14] <= technical.other_ren_max * projected.other_renewable_cap_gw[t] * scenario.other_ren_max_anomaly)
+    @constraint(model, [t=2:T], quantity[t,14] - quantity[t-1,14] >= -technical.other_ren_ramp * projected.other_renewable_cap_gw[t])
+    @constraint(model, [t=2:T], quantity[t,14] - quantity[t-1,14] <= +technical.other_ren_ramp * projected.other_renewable_cap_gw[t])
+
+    # Renewable waste
+    @constraint(model, [t=1:T], quantity[t,15] >= technical.ren_waste_min * projected.renewable_waste_cap_gw[t])
+    @constraint(model, [t=1:T], quantity[t,15] <= technical.ren_waste_max * projected.renewable_waste_cap_gw[t] * scenario.ren_waste_max_anomaly)
+    @constraint(model, [t=2:T], quantity[t,15] - quantity[t-1,15] >= -technical.ren_waste_ramp * projected.renewable_waste_cap_gw[t])
+    @constraint(model, [t=2:T], quantity[t,15] - quantity[t-1,15] <= +technical.ren_waste_ramp * projected.renewable_waste_cap_gw[t])
+
+    # Storage technologies ----
     # Pumped hydro
     @constraint(model, ph_stock[1] == rand(Uniform(0.2, 0.8)) * technical.ph_storage_cap_gwh)
     @constraint(model, [t=2:T], ph_stock[t] <= technical.ph_storage_cap_gwh)
@@ -227,26 +247,10 @@ function dispatch_electricity_market(
         ph_stock[t] == ph_stock[t-1] 
         + sqrt(technical.ph_roundtrip_eff * scenario.ph_roundtrip_eff_anomaly) * ph_in[t-1] 
         - ph_out[t-1] / sqrt(technical.ph_roundtrip_eff * scenario.ph_roundtrip_eff_anomaly)) 
+    @constraint(model, ph_stock[T] == ph_stock[1])
     @constraint(model, [t=1:T], ph_in[t]  <= projected.pumped_hydro_pump_cap_gw[t])
     @constraint(model, [t=1:T], ph_out[t] <= projected.pumped_hydro_turbine_cap_gw[t])
-    @constraint(model, [t=1:T], quantity[t,11] == ph_out[t]) 
-
-    # Solar PV, solar thermal, wind (capacity factor bounds)
-    @constraint(model, [t=1:T], quantity[t,12] <= projected.solar_pv_cap_gw[t]      * projected.solar_pv_cap_factor[t])
-    @constraint(model, [t=1:T], quantity[t,13] <= projected.solar_thermal_cap_gw[t] * projected.solar_thermal_cap_factor[t])
-    @constraint(model, [t=1:T], quantity[t,14] <= projected.wind_cap_gw[t]          * projected.wind_cap_factor[t])
-
-    # Other renewables
-    @constraint(model, [t=1:T], quantity[t,15] >= technical.other_ren_min * projected.other_renewable_cap_gw[t])
-    @constraint(model, [t=1:T], quantity[t,15] <= technical.other_ren_max * projected.other_renewable_cap_gw[t] * scenario.other_ren_max_anomaly)
-    @constraint(model, [t=2:T], quantity[t,15] - quantity[t-1,15] >= -technical.other_ren_ramp * projected.other_renewable_cap_gw[t])
-    @constraint(model, [t=2:T], quantity[t,15] - quantity[t-1,15] <= +technical.other_ren_ramp * projected.other_renewable_cap_gw[t])
-
-    # Renewable waste
-    @constraint(model, [t=1:T], quantity[t,16] >= technical.ren_waste_min * projected.renewable_waste_cap_gw[t])
-    @constraint(model, [t=1:T], quantity[t,16] <= technical.ren_waste_max * projected.renewable_waste_cap_gw[t] * scenario.ren_waste_max_anomaly)
-    @constraint(model, [t=2:T], quantity[t,16] - quantity[t-1,16] >= -technical.ren_waste_ramp * projected.renewable_waste_cap_gw[t])
-    @constraint(model, [t=2:T], quantity[t,16] - quantity[t-1,16] <= +technical.ren_waste_ramp * projected.renewable_waste_cap_gw[t])
+    @constraint(model, [t=1:T], quantity[t,16] == ph_out[t]) 
 
     # Batteries (4h duration)
     @constraint(model, batt_stock[1] == rand(Uniform(0.2, 0.8)) * technical.batt_duration * projected.batteries_cap_gw[1])
@@ -255,6 +259,7 @@ function dispatch_electricity_market(
         batt_stock[t] == (1 - technical.batt_decay) * batt_stock[t-1] 
         + sqrt(technical.batt_roundtrip_eff * scenario.batt_roundtrip_eff_anomaly) * batt_in[t-1] 
         - batt_out[t-1] / sqrt(technical.batt_roundtrip_eff * scenario.batt_roundtrip_eff_anomaly))
+    @constraint(model, batt_stock[T] == batt_stock[1])
     @constraint(model, [t=1:T], batt_in[t]  <= projected.batteries_cap_gw[t])
     @constraint(model, [t=1:T], batt_out[t] <= projected.batteries_cap_gw[t])
     @constraint(model, [t=1:T], quantity[t,17] == batt_out[t])
@@ -290,22 +295,23 @@ function dispatch_electricity_market(
         nuclear           = q_vals[:, 8]
         conv_hydro        = q_vals[:, 9]
         river_hydro       = q_vals[:, 10]
-        pumped_hydro      = q_vals[:, 11]
-        solar_pv          = q_vals[:, 12]
-        solar_t           = q_vals[:, 13]
-        wind              = q_vals[:, 14]
-        other_r           = q_vals[:, 15]
-        ren_w             = q_vals[:, 16]
+        solar_pv          = q_vals[:, 11]
+        solar_t           = q_vals[:, 12]
+        wind              = q_vals[:, 13]
+        other_r           = q_vals[:, 14]
+        ren_w             = q_vals[:, 15]
+        pumped_hydro      = q_vals[:, 16]
         batt_gen          = q_vals[:, 17]
 
         # Aggregated generation
         non_ren_gen       = [sum(q_vals[t, 1:8])  for t in 1:T]
-        ren_gen           = [sum(q_vals[t, 9:17]) for t in 1:T]
-        low_c_gen         = [sum(q_vals[t, 8:17]) for t in 1:T]
+        ren_gen           = [sum(q_vals[t, 9:15]) for t in 1:T]
+        low_c_gen         = [sum(q_vals[t, 8:15]) for t in 1:T]
         total_gen         = ren_gen .+ non_ren_gen
         share_ren_gen     = ren_gen ./ total_gen
+        share_lc_gen      = low_c_gen ./ total_gen
 
-        # Pumped hydro storage
+        # Pumped hydro
         ph_in_vals        = JuMP.value.(ph_in)
         ph_stock_vals     = JuMP.value.(ph_stock)
 
@@ -340,9 +346,9 @@ function dispatch_electricity_market(
         life_e            = JuMP.value.(lifecycle_emissions)
 
         # Curtailment
-        curt_solar_pv      = 1.0 - sum(q_vals[t,12] for t in 1:T) / sum(projected.solar_pv_cap_gw[t]      * projected.solar_pv_cap_factor[t]      for t in 1:T)
-        curt_solar_thermal = 1.0 - sum(q_vals[t,13] for t in 1:T) / sum(projected.solar_thermal_cap_gw[t] * projected.solar_thermal_cap_factor[t] for t in 1:T)
-        curt_wind          = 1.0 - sum(q_vals[t,14] for t in 1:T) / sum(projected.wind_cap_gw[t]          * projected.wind_cap_factor[t]          for t in 1:T)
+        curt_solar_pv      = 1.0 - sum(q_vals[t,11] for t in 1:T) / sum(projected.solar_pv_cap_gw[t]      * projected.solar_pv_cap_factor[t]      for t in 1:T)
+        curt_solar_thermal = 1.0 - sum(q_vals[t,12] for t in 1:T) / sum(projected.solar_thermal_cap_gw[t] * projected.solar_thermal_cap_factor[t] for t in 1:T)
+        curt_wind          = 1.0 - sum(q_vals[t,13] for t in 1:T) / sum(projected.wind_cap_gw[t]          * projected.wind_cap_factor[t]          for t in 1:T)
 
         results = Dict(
             # Prices
@@ -375,14 +381,14 @@ function dispatch_electricity_market(
             "nuclear_gen"               => nuclear,
             "conventional_hydro_gen"    => conv_hydro,
             "run_of_river_hydro_gen"    => river_hydro,
-            "pumped_hydro_pumping"      => ph_in_vals,
-            "pumped_hydro_gen"          => pumped_hydro,
-            "pumped_hydro_storage"      => ph_stock_vals,
             "solar_pv_gen"              => solar_pv,
             "solar_thermal_gen"         => solar_t,
             "wind_gen"                  => wind,
             "other_renewable_gen"       => other_r,
             "renewable_waste_gen"       => ren_w,
+            "pumped_hydro_pumping"      => ph_in_vals,
+            "pumped_hydro_gen"          => pumped_hydro,
+            "pumped_hydro_storage"      => ph_stock_vals,
             "battery_charge"            => batt_in_vals,
             "battery_gen"               => batt_gen,
             "battery_storage"           => batt_stock_vals,
@@ -393,6 +399,7 @@ function dispatch_electricity_market(
             "low_carbon_gen"            => low_c_gen,
             "non_renewable_gen"         => non_ren_gen,
             "share_renewable_gen"       => share_ren_gen,
+            "share_low_carbon_gen"      => share_lc_gen,            
             "min_non_renewable_gen"     => share_min_non_ren,
 
             # Imports / exports
@@ -459,14 +466,14 @@ function dispatch_electricity_market(
         "nuclear_gen"               => fill(-1.0, T),
         "conventional_hydro_gen"    => fill(-1.0, T),
         "run_of_river_hydro_gen"    => fill(-1.0, T),
-        "pumped_hydro_pumping"      => fill(-1.0, T),
-        "pumped_hydro_gen"          => fill(-1.0, T),
-        "pumped_hydro_storage"      => fill(-1.0, T),
         "solar_pv_gen"              => fill(-1.0, T),
         "solar_thermal_gen"         => fill(-1.0, T),
         "wind_gen"                  => fill(-1.0, T),
         "other_renewable_gen"       => fill(-1.0, T),
         "renewable_waste_gen"       => fill(-1.0, T),
+        "pumped_hydro_pumping"      => fill(-1.0, T),
+        "pumped_hydro_gen"          => fill(-1.0, T),
+        "pumped_hydro_storage"      => fill(-1.0, T),
         "battery_charge"            => fill(-1.0, T),
         "battery_gen"               => fill(-1.0, T),
         "battery_storage"           => fill(-1.0, T),
@@ -477,6 +484,7 @@ function dispatch_electricity_market(
         "low_carbon_gen"            => fill(-1.0, T),
         "non_renewable_gen"         => fill(-1.0, T),
         "share_renewable_gen"       => fill(-1.0, T),
+        "share_low_carbon_gen"      => fill(-1.0, T),
         "min_non_renewable_gen"     => fill(-1.0, T),
 
         # Imports / exports
