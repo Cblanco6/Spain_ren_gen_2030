@@ -175,6 +175,9 @@ function sample_deltas(
         delta_draws[var] = delta_adjusted
     end
 
+    # we don't have projections for PH pump capacity, but estimate a relation with turbination capacity
+    delta_draws["pumped_hydro_pump_cap_gw"] = 0.7 * delta_draws["pumped_hydro_turbine_cap_gw"]
+
     return delta_draws
 end
 
