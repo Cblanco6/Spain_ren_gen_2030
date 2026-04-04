@@ -316,10 +316,12 @@ function dispatch_electricity_market(
         # Pumped hydro
         ph_in_vals        = JuMP.value.(ph_in)
         ph_stock_vals     = JuMP.value.(ph_stock)
+        share_ren_in_ph   = sum(ph_in_vals .* share_ren_gen) / sum(ph_in_vals)
 
         # Batteries
         batt_in_vals        = JuMP.value.(batt_in)
         batt_stock_vals     = JuMP.value.(batt_stock)
+        share_ren_in_batt   = sum(batt_in_vals .* share_ren_gen) / sum(batt_in_vals)
 
         # Minimum non-renewable generation (constraint variable)
         min_non_ren_vals  = JuMP.value.(min_non_ren_gen)
@@ -389,7 +391,7 @@ function dispatch_electricity_market(
             "renewable_waste_gen"       => ren_w,
 
             # Storage flows and stock
-            "pumped_hydro_pumping"      => ph_in_vals,
+            "pumped_hydro_pumping"      => ph_in_vals
             "pumped_hydro_out"          => pumped_hydro,
             "pumped_hydro_storage"      => ph_stock_vals,
             "battery_charge"            => batt_in_vals,
@@ -404,7 +406,9 @@ function dispatch_electricity_market(
             "non_renewable_gen"         => non_ren_gen,
             "min_non_renewable_gen"     => min_non_ren_vals,
             "share_renewable_gen"       => share_ren_gen,
-            "share_low_carbon_gen"      => share_lc_gen,            
+            "share_low_carbon_gen"      => share_lc_gen,   
+            "share_ren_ph_in"           => share_ren_in_ph,
+            "share_ren_batt_in"         => share_ren_in_batt,
 
             # Imports / exports
             "imports_FRA"               => imp_fra,
@@ -493,6 +497,8 @@ function dispatch_electricity_market(
         "min_non_renewable_gen"     => fill(-1.0, T),
         "share_renewable_gen"       => fill(-1.0, T),
         "share_low_carbon_gen"      => fill(-1.0, T),
+        "share_ren_ph_in"           => -1.0,
+        "share_ren_batt_in"         => -1.0,
 
         # Imports / exports
         "imports_FRA"               => fill(-1.0, T),
@@ -511,7 +517,7 @@ function dispatch_electricity_market(
         "curtailment_solar_thermal" => -1.0,
         "curtailment_wind"          => -1.0
         )
-        
+
     end
     return results
 end

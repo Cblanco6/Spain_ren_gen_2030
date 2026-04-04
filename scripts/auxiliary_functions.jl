@@ -377,6 +377,8 @@ function store_results!(
         low_carbon_gen       = sum(results["low_carbon_gen"])    * annual_factor,
         non_renewable_gen    = sum(results["non_renewable_gen"]) * annual_factor,
         storage_out          = sum(results["storage_out"])       * annual_factor,
+        share_ren_ph_in      = results["share_ren_ph_in"],
+        share_ren_batt_in    = results["share_ren_batt_in"],
 
         # Statistical measures of aggregated generation
         share_renewable_gen  = sum(results["renewable_gen"])         / sum(results["total_generation"]),
