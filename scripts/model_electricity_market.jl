@@ -121,7 +121,7 @@ function dispatch_electricity_market(
 
     # Total costs (fixed + running)
     @constraint(model, [t=1:T],
-        costs[t] == sum(technology.fixed_om_eur_gwy[i] * technology.avg_cap_year[i] * years_solving for i in 1:I) / T + running_costs[t])
+        costs[t] == sum(technology.fixed_om_eur_gwy[i] * iteration.avg_cap_year[i] * years_solving for i in 1:I) / T + running_costs[t])
 
     # Running costs
     @constraint(model, [t=1:T],

@@ -155,19 +155,19 @@ function sample_deltas(
         delta_adjusted = delta_draw
 
         # Coal phase-out
-        if var == "coal_cap_mw" && scenario.coal_phase_out
+        if var == "coal_cap_gw" && scenario.coal_phase_out
             delta_adjusted = -1.0
 
         # Nuclear: avoid phase-out
-        elseif var == "nuclear_cap_mw" && !scenario.nuclear_phase_out
+        elseif var == "nuclear_cap_gw" && !scenario.nuclear_phase_out
             delta_adjusted = 0.0
 
         # Batteries scaling
-        elseif var == "batteries_cap_mw"
+        elseif var == "batteries_cap_gw"
             delta_adjusted *= scenario.battery_cap_multiplier
 
         # Renewables scaling 
-        elseif occursin("_cap_mw", var) && startswith(var, "ren")
+        elseif occursin("_cap_gw", var) && startswith(var, "ren")
             delta_adjusted *= scenario.renewable_cap_multiplier
         end
 
@@ -175,7 +175,7 @@ function sample_deltas(
         delta_draws[var] = delta_adjusted
     end
 
-    # we don't have projections for PH pump capacity, but estimate a relation with turbination capacity
+    # we don't have projections for PH pump capacity, but estimate a relation with PH turbination capacity
     delta_draws["pumped_hydro_pump_cap_gw"] = 0.7 * delta_draws["pumped_hydro_turbine_cap_gw"]
 
     return delta_draws
@@ -209,6 +209,7 @@ end
 
 function set_iteration_specific_parameters(
     projected::DataFrame,        # hourly projected data for 2030
+    technology::DataFrame,       # fixed technical and economic parameters by generation technology
     technical::NamedTuple,       # technical parameters shared across scenarios
     scenario::NamedTuple,        # scenario-specific parameters
    )
@@ -226,6 +227,32 @@ function set_iteration_specific_parameters(
     a_residential = projected.residential_demand_gwh + b_residential .* projected.spot_price_eur_gwh
     a_commercial  = projected.commercial_demand_gwh  + b_commercial  .* projected.spot_price_eur_gwh
     a_industrial  = projected.industrial_demand_gwh  + b_industrial  .* projected.spot_price_eur_gwh
+
+    # average capacity to compute fixed costs
+    tech_to_var = Dict(
+        "coal"               => "coal_cap_gw",
+        "combined_cycle"     => "combined_cycle_cap_gw",
+        "gas_turbine"        => "gas_turbine_cap_gw",
+        "vapor_turbine"      => "vapor_turbine_cap_gw",
+        "cogeneration"       => "cogeneration_cap_gw",
+        "diesel"             => "diesel_cap_gw",
+        "nonrenewable"       => "nonrenewable_waste_cap_gw",
+        "nuclear"            => "nuclear_cap_gw",
+        "conventional_hydro" => "conventional_hydro_cap_gw",
+        "run_of_river_hydro" => "run_of_river_hydro_cap_gw",
+        "solar_pv"           => "solar_pv_cap_gw",
+        "solar_thermal"      => "solar_thermal_cap_gw",
+        "wind"               => "wind_cap_gw",
+        "other_renewable"    => "other_renewable_cap_gw",
+        "renewable_waste"    => "renewable_waste_cap_gw",
+        "pumped_hydro"       => "pumped_hydro_turb_cap_gw",
+        "battery"            => "batteries_cap_gw"
+    )
+
+    avg_cap_year = [
+        mean(projected[!, tech_to_var[tech]])
+        for tech in technology.technology
+    ]
 
     # Hydro bundles for weekly allocation maximization
     bundle_size = 168   # number of hours in a week
@@ -258,6 +285,7 @@ function set_iteration_specific_parameters(
         a_residential, b_residential,
         a_commercial,  b_commercial,
         a_industrial,  b_industrial,
+        avg_cap,
         n_bundles, bundles,
         hydro_min_hourly, hydro_max_hourly, hydro_weekly_totals,
         hours_high_ror, hours_med_high_ror, hours_med_low_ror, hours_low_ror

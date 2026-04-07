@@ -118,16 +118,17 @@ for scen in scenario_names
 
         # 4. Compute iteration-specific parameters
         iteration_params = compute_iteration_params(
-            projected = sampled_window_data,    # hourly projected data for 2030
-            technical = technical_params ,      # model calibration parameters shared across scenarios
-            scenario  = scenario_params         # scenario-specific parameters
+            projected  = sampled_window_data,    # hourly projected data for 2030
+            technology = technology_data,        # fixed technical and economic parameters by generation technology
+            technical  = technical_params,       # model calibration parameters shared across scenarios
+            scenario   = scenario_params         # scenario-specific parameters
             )
 
         # 5. Solve the model
         results = dispatch_electricity_market(
             projected  = sampled_window_data,    # hourly projected data for 2030
             technology = technology_data,        # fixed technical and economic parameters by generation technology
-            technical  = technical_params ,      # model calibration parameters shared across scenarios
+            technical  = technical_params,       # model calibration parameters shared across scenarios
             scenario   = scenario_params,        # scenario-specific parameters
             iteration  = iteration_params        # iteration-specific parameters
             )
@@ -149,7 +150,7 @@ for scen in scenario_names
             monthly_profiles,
             delta_draws, 
             inputs_realized
-        )
+            )
 
     end
 end
