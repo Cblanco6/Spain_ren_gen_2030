@@ -18,15 +18,21 @@ Note that both the [ESIOS](https://api.esios.ree.es/) and [ENTSO-e](https://tran
 
 2. Scripts to run the Monte Carlo Simulations
 
-These are the core scripts of the project: the model, scenarios and Monte Carlo simulations.
+These are the core scripts of the project: the model and Monte Carlo simulations.
+They work with the following datasets in data/
+
+-   complete_dataset
+-   fixed_data
+-   projection_deltas
+-   scenario_parameters
+
 Forking this repository you can play with the model and/or scenarios to test how the model responds to other assumptions.
 Note that you will need a [Gurobi license](https://www.gurobi.com/academia/academic-program-and-licenses/) to run the model. 
 If you do, we would love to get your feedback!
 
--   21_electricity_market_model.jl defines the model we have used to 
+-   21_electricity_market_model.jl defines the model we have used to simulate the Spanish electricity market
 -   22_model_calibration.jl *(or 22_model_calibration.ipynb)* shows how the model replicates historical patterns  
--   23_define_scenarios.jl defines the parameters that change across scenarios
--   24_run_monte_carlo.jl runs the Monte Carlo Simulations for each scenario and saves the results into the output/raw_results folder as csv. files
+-   23_run_monte_carlo.jl runs the Monte Carlo Simulations for each scenario and saves the results into the output/raw_results folder as csv. files
 
 3. Scrips to create the graphs and other output
 
