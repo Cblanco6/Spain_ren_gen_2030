@@ -7,7 +7,7 @@
 # 3. sampling_procedure defines the sampling procedure for the projection  stimates
 # 4. sample_deltas applies the sampling procedure to get a dictionary of draws for each iteration
 # 5. apply_deltas! projects the sampled_window_data to 2030 by applying the delta draws
-# 6. set_iteration_specific_parameters to define some parameters specific to each iteration hat are passed to the model
+# 6. compute_iteration_params to define some parameters specific to each iteration hat are passed to the model
 # 7. calculate_hourly_averages computes averages to retrieve hourly profiles of a selection of variables
 # 8. calculate_monthly_averages computes averages to retrieve monthly profiles of a selection of variables
 # 9. store_results! stores all the results from each iteration into different pre-defined containers
