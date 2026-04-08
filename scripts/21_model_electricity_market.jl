@@ -9,6 +9,7 @@ using Gurobi
 
 
 # define technical parameters (model calibration)
+# once we have their definitive version, update the csv technical_params and eliminate this
 technical = (
     elas_residential = 0.015,
     elas_commercial = 0.03,

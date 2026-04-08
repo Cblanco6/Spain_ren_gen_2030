@@ -1,4 +1,5 @@
-# Antiguo código de las MC simulations para el escenario baseline
+# This script runs the 10,000 Monte Carlo simulations per scenario
+# scenario-specific parameters can be directly edited below (including adding new scenarios)
 
 
 # load the required libraries
