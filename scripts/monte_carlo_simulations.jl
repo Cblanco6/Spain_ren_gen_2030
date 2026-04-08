@@ -61,7 +61,6 @@ scenario_dict = Dict(scen => scenarios[i, :] for (i, scen) in enumerate(scenario
 
 
 # define monte carlo parameters
-
 baseline_years = [2023, 2024]
 variables_to_draw = [
     "residential_demand_gwh", "commercial_demand_gwh", "industrial_demand_gwh", 
