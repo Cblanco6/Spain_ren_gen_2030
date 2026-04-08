@@ -26,7 +26,6 @@ technology_data        = CSV.read(joinpath(project_root, "data", "technology_dat
 projection_deltas_data = CSV.read(joinpath(project_root, "data", "projection_deltas_data.csv"), DataFrame)
 
 # define the scenarios
-# FALTA NUCLEAR cap y batteries, lo retomamos luego!
 
 # Revisar:
 # 1. Anomalies tiene sentido en elasticity y hydro.

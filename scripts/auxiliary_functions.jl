@@ -207,7 +207,7 @@ end
 # some parameters shall be computed for each iteration (the input data will be different in each one).
 # That is exactly what this function does, and returns a named tuple which is inputed into the model
 
-function set_iteration_specific_parameters(
+function cumpute_iteration_params(
     projected::DataFrame,        # hourly projected data for 2030
     technology::DataFrame,       # fixed technical and economic parameters by generation technology
     technical::NamedTuple,       # technical parameters shared across scenarios
