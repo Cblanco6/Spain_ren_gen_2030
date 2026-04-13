@@ -164,11 +164,11 @@ function sample_deltas(
 
         # Batteries scaling
         elseif var == "batteries_cap_gw"
-            delta_adjusted *= scenario.battery_cap_multiplier
+            delta_adjusted *= scenario.batt_cap_multiplier
 
         # Renewables scaling 
         elseif occursin("_cap_gw", var) && startswith(var, "ren")
-            delta_adjusted *= scenario.renewable_cap_multiplier
+            delta_adjusted *= scenario.ren_cap_multiplier
         end
 
         # 3. Store final delta
@@ -207,7 +207,7 @@ end
 # some parameters shall be computed for each iteration (the input data will be different in each one).
 # That is exactly what this function does, and returns a named tuple which is inputed into the model
 
-function cumpute_iteration_params(
+function compute_iteration_params(
     projected::DataFrame,        # hourly projected data for 2030
     technology::DataFrame,       # fixed technical and economic parameters by generation technology
     technical::NamedTuple,       # technical parameters shared across scenarios
@@ -285,7 +285,7 @@ function cumpute_iteration_params(
         a_residential, b_residential,
         a_commercial,  b_commercial,
         a_industrial,  b_industrial,
-        avg_cap,
+        avg_cap_year,
         n_bundles, bundles,
         hydro_min_hourly, hydro_max_hourly, hydro_weekly_totals,
         hours_high_ror, hours_med_high_ror, hours_med_low_ror, hours_low_ror
@@ -339,7 +339,7 @@ function store_results!(
     iter::Int,
     scen::String,
     results::Dict,                 # the output of dispatch_electricity_market
-    delta_draws::NamedTuple,      
+    delta_draws::Dict,      
     projected_data::DataFrame,   
     main_results::Dict,            # pre-allocated container to save main results
     hourly_profiles::Dict,         # pre-allocated container to save hourly profiles

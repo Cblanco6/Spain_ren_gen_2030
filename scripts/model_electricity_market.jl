@@ -10,7 +10,7 @@ using Gurobi
 
 # define technical parameters (model calibration)
 # once we have their definitive version, update the csv technical_params and eliminate this
-technical = (
+technical_params = (
     elas_residential = 0.015,
     elas_commercial = 0.03,
     elas_industrial = 0.05,
@@ -392,7 +392,7 @@ function dispatch_electricity_market(
             "renewable_waste_gen"       => ren_w,
 
             # Storage flows and stock
-            "pumped_hydro_pumping"      => ph_in_vals
+            "pumped_hydro_pumping"      => ph_in_vals,
             "pumped_hydro_out"          => pumped_hydro,
             "pumped_hydro_storage"      => ph_stock_vals,
             "battery_charge"            => batt_in_vals,

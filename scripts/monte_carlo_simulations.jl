@@ -18,7 +18,7 @@ project_root = dirname(@__DIR__)
 
 # load the function that models the electricity market and the other auxiliary functions
 include(joinpath(project_root, "scripts", "model_electricity_market.jl"))
-include(joinpath(project_root, "scripts", "auxiliar_functions.jl"))
+include(joinpath(project_root, "scripts", "auxiliary_functions.jl"))
 
 # load the fixed datasets
 historical_data        = CSV.read(joinpath(project_root, "data", "historical_data.csv"), DataFrame)
@@ -56,8 +56,11 @@ scenarios = DataFrame(
 )
 
 scenario_names = scenarios.scenario_name
-scenario_dict = Dict(scen => scenarios[i, :] for (i, scen) in enumerate(scenario_names))
 
+scenario_dict = Dict(
+    scen => NamedTuple(scenarios[i, :])
+    for (i, scen) in enumerate(scenario_names)
+)
 
 # define monte carlo parameters
 baseline_years = [2023, 2024]
