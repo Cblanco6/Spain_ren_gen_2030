@@ -6,6 +6,11 @@ import numpy as np
 import os
 from entsoe import EntsoePandasClient
 
+# Resolve paths relative to the repo root, regardless of where the script is run from
+REPO_ROOT      = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR       = os.path.join(REPO_ROOT, "data")
+DATA_OTHER_DIR = os.path.join(REPO_ROOT, "data", "other")
+
 # =========================================================
 # 1. CONFIGURATION AND DICTIONARIES
 # =========================================================
@@ -308,12 +313,14 @@ for attr in ['year', 'month', 'day', 'hour']:
 print("Integrating Fuel and CO2 Costs...")
 try:
     def load_file_flexible(base_name):
-        if os.path.exists(f"Data/{base_name}.xlsx"):
-            return pd.read_excel(f"Data/{base_name}.xlsx")
-        elif os.path.exists(f"Data/{base_name}.csv"):
-            return pd.read_csv(f"Data/{base_name}.csv")
+        xlsx_path = os.path.join(DATA_OTHER_DIR, f"{base_name}.xlsx")
+        csv_path  = os.path.join(DATA_OTHER_DIR, f"{base_name}.csv")
+        if os.path.exists(xlsx_path):
+            return pd.read_excel(xlsx_path)
+        elif os.path.exists(csv_path):
+            return pd.read_csv(csv_path)
         else:
-            raise FileNotFoundError(f"File {base_name} not found in Data/ folder")
+            raise FileNotFoundError(f"File {base_name} not found in {DATA_OTHER_DIR}")
 
     df_gas = load_file_flexible("NaturalGas_Daily_Prices2020-2025")
     df_cde = load_file_flexible("Coal_Diesel_ETS_Monthly_Costs")
@@ -402,9 +409,10 @@ official_order = [
 
 present_columns = [c for c in official_order if c in full_df.columns]
 
-os.makedirs("Data", exist_ok=True)
-full_df[present_columns].to_csv("Data/historical_data.csv", index=False)
+os.makedirs(DATA_DIR, exist_ok=True)
+output_path = os.path.join(DATA_DIR, "historical_data.csv")
+full_df[present_columns].to_csv(output_path, index=False)
 
-print(f"\n Dataset saved: Data/historical_data.csv")
+print(f"\n Dataset saved: {output_path}")
 print(f" Rows: {len(full_df):,} | Columns: {len(present_columns)}")
 print("Script completed successfully!")
