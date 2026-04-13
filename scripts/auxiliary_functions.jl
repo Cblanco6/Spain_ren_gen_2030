@@ -35,7 +35,7 @@ function sample_time_window(
         historical_data
     )
 
-    return sampled_window_data, year, day_start
+    return sampled_window_data
 end
 
 
@@ -207,7 +207,7 @@ end
 # some parameters shall be computed for each iteration (the input data will be different in each one).
 # That is exactly what this function does, and returns a named tuple which is inputed into the model
 
-function compute_iteration_params(
+function compute_iteration_params(;
     projected::DataFrame,        # hourly projected data for 2030
     technology::DataFrame,       # fixed technical and economic parameters by generation technology
     technical::NamedTuple,       # technical parameters shared across scenarios
@@ -236,7 +236,7 @@ function compute_iteration_params(
         "vapor_turbine"      => "vapor_turbine_cap_gw",
         "cogeneration"       => "cogeneration_cap_gw",
         "diesel"             => "diesel_cap_gw",
-        "nonrenewable"       => "nonrenewable_waste_cap_gw",
+        "nonrenewable_waste" => "nonrenewable_waste_cap_gw",
         "nuclear"            => "nuclear_cap_gw",
         "conventional_hydro" => "conventional_hydro_cap_gw",
         "run_of_river_hydro" => "run_of_river_hydro_cap_gw",
@@ -335,7 +335,7 @@ end
 # ===== 8. Auxiliary function to store results of each iteration =====
 # This function defines how we store all the results in the loop 
 
-function store_results!(
+function store_results!(;
     iter::Int,
     scen::String,
     results::Dict,                 # the output of dispatch_electricity_market

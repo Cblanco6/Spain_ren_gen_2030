@@ -40,15 +40,6 @@ scenarios = DataFrame(
     elas_anomaly          = [1.0,             1.0,            2.0,            1.0],
     hydro_anomaly         = [1.0,             1.0,            1.0,            0.8],
 
-    #min_ccgas_gen_anomaly = [1.0,             1.0,            0.5,            1.0],
-    #min_cogen_gen_anomaly = [1.0,             1.0,            0.5,            1.0],
-    #min_oil_gen_anomaly   = [1.0,             1.0,            0.5,            1.0],
-    #other_ren_max_anomaly = [1.0,             1.0,            1.2,            1.0],
-    #ren_waste_max_anomaly = [1.0,             1.0,            1.2,            1.0],
-
-    #ph_eff_anomaly        = [1.0,             1.0,            1.025,          1.0],
-    #batt_eff_anomaly      = [1.0,             1.0,            1.025,          1.0],
-
     coal_phase_out        = [true,            true,           true,          true],
     nuclear_phase_out     = [true,            false,          true,          true],
     batt_cap_multiplier   = [1.0,             0.75,           1.25,           1.0],
