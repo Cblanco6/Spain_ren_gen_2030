@@ -141,7 +141,7 @@ def fetch_entsoe_hydro(start_year, end_year):
     entsoe_df = pd.concat(all_dfs)
     entsoe_df = entsoe_df[~entsoe_df.index.duplicated(keep='first')]
 
-    # FIX (v5): Defensive rename — set index name explicitly before reset,
+    # set index name explicitly before reset,
     # so the resulting column is always 'datetime' regardless of entsoe-py version.
     entsoe_df.index.name = 'datetime'
     entsoe_df = entsoe_df.reset_index()
@@ -212,7 +212,7 @@ initial_missings = full_df.isna().sum().sum()
 print(f"Detected {initial_missings} empty cells (NaNs). Starting robust fill...")
 
 time_cols  = ['datetime', 'year_month']
-# FIX (v5): Spot price excluded from 24h-shift imputation.
+# Spot price excluded from 24h-shift imputation.
 # Daily copy is valid for physical quantities (demand, generation) which follow
 # strong diurnal seasonality. Prices do not share this property — linear
 # interpolation is more appropriate and avoids importing yesterday's price spike.
@@ -283,7 +283,7 @@ for c in ['France', 'Portugal', 'Morocco']:
         full_df[f"imports_{c}_mwh"]   = full_df[raw].clip(lower=0)
         full_df[f"exports_{c}_mwh"]   = full_df[raw].clip(upper=0).abs()
 
-# FIX (v5): Added .replace(0, np.nan) to avoid division-by-zero producing inf/NaN
+# Added .replace(0, np.nan) to avoid division-by-zero producing inf/NaN
 # in solar and wind capacity factors (consistent with nuclear treatment).
 full_df['nuclear_cap_factor']       = (full_df['nuclear_self_reported_cap_mw']
                                         / full_df['nuclear_cap_mw'].replace(0, np.nan)).clip(0, 1).fillna(0)
