@@ -253,7 +253,7 @@ function dispatch_electricity_market(;
         - ph_out[t-1] / sqrt(technical.ph_roundtrip_eff)) 
     @constraint(model, ph_stock[T] == ph_stock[1])
     @constraint(model, [t=1:T], ph_in[t]  <= projected.pumped_hydro_pump_cap_gw[t])
-    @constraint(model, [t=1:T], ph_out[t] <= projected.pumped_hydro_turb_cap_gw[t])
+    @constraint(model, [t=1:T], ph_out[t] <= projected.pumped_hydro_turbine_cap_gw[t])
     @constraint(model, [t=1:T], quantity[t,16] == ph_out[t]) 
 
     # Batteries (4h duration)

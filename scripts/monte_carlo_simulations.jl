@@ -97,7 +97,7 @@ for scen in scenario_names
         @printf("Scenario %s, iteration %d of %d\n", scen, iter, num_iterations)
 
         # 1. Sample time window from historical data
-        sampled_window_data, year, day_start = sample_time_window(historical_data, baseline_years)
+        sampled_window_data = sample_time_window(historical_data, baseline_years)
 
         # 2. Sample deltas for this iteration
         delta_draws_iter = sample_deltas(
@@ -128,21 +128,16 @@ for scen in scenario_names
 
         # 6. Store all the results 
         store_results!(
-            # these are the id of each iteration run 
-            scen, 
-            iter,
-
-            # these are the parameters needed to run the function
-            results, 
-            sampled_window_data, 
-            delta_draws_iter,
-
-            # these are the pre-allocated containers that are updated by the function
-            main_results, 
-            hourly_profiles, 
-            monthly_profiles,
-            delta_draws, 
-            inputs_realized
+            iter               = iter,
+            scen               = scen,
+            results            = results,
+            delta_draws        = delta_draws_iter,
+            projected_data     = sampled_window_data,
+            main_results       = main_results,
+            hourly_profiles    = hourly_profiles,
+            monthly_profiles   = monthly_profiles,
+            delta_draws_container = delta_draws,
+            inputs_realized    = inputs_realized
             )
 
     end

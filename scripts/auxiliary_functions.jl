@@ -245,7 +245,7 @@ function compute_iteration_params(;
         "wind"               => "wind_cap_gw",
         "other_renewable"    => "other_renewable_cap_gw",
         "renewable_waste"    => "renewable_waste_cap_gw",
-        "pumped_hydro"       => "pumped_hydro_turb_cap_gw",
+        "pumped_hydro"       => "pumped_hydro_turbine_cap_gw",
         "battery"            => "batteries_cap_gw"
     )
 
@@ -489,7 +489,7 @@ function store_results!(;
         wind_cap_gw               = mean(projected_data.wind_cap_gw),
         other_renewable_cap_gw    = mean(projected_data.other_renewable_cap_gw),
         renewable_waste_cap_gw    = mean(projected_data.renewable_waste_cap_gw),
-        pumped_hydro_turb_cap_gw  = mean(projected_data.pumped_hydro_cap_gw),
+        pumped_hydro_turb_cap_gw  = mean(projected_data.pumped_hydro_turbine_cap_gw),
         batteries_cap_gw          = mean(projected_data.batteries_cap_gw),
         
         # Fuel and EU ETS costs
