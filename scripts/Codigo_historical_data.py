@@ -4,7 +4,11 @@ import time
 import calendar
 import numpy as np
 import os
+import warnings
+import yfinance as yf
 from entsoe import EntsoePandasClient
+
+warnings.filterwarnings('ignore')
 
 # Resolve paths relative to the repo root, regardless of where the script is run from
 REPO_ROOT      = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -307,55 +311,213 @@ for attr in ['year', 'month', 'day', 'hour']:
 
 
 # =========================================================
-# 5. PROCESSING: FUEL & CO2 COSTS
+# 5. PROCESSING: FUEL & CO2 COSTS  (automated fetch + fallbacks)
 # =========================================================
+# Sources:
+#   Gas     : MIBGAS (mibgas.es) — Iberian day-ahead, EUR/MWh, daily
+#   Coal    : yfinance 'MTF=F'  — API2 Rotterdam futures, USD/t -> EUR/MWh
+#   Diesel  : yfinance 'HO=F'  — NYMEX Heating Oil, USD/gal -> EUR/MWh
+#   EUR/USD : yfinance 'EURUSD=X' — for USD -> EUR conversion
+#   EU ETS  : yfinance '^ICEEUA' (fallback: Coal_Diesel_ETS_Monthly_Costs.xlsx)
+#   Uranium : yfinance 'UX=F'   (fallback: Uranium_Annual_Prices2020-2024.xlsx)
 
-print("Integrating Fuel and CO2 Costs...")
+print("Integrating Fuel and CO2 Costs (automated fetch)...")
+
+# Conversion factors
+COAL_MWH_PER_TON      = 8.14    # 1 metric ton thermal coal  ~ 8.14 MWh
+DIESEL_MWH_PER_GALLON = 0.0406  # 1 US gallon heating oil    ~ 0.0406 MWh
+URANIUM_MWH_PER_LB    = 30.211  # U3O8 lb -> MWh fuel equivalent
+
+yf_start = f"{YEAR_START}-01-01"
+yf_end   = f"{YEAR_END + 1}-01-01"  # yfinance end date is exclusive
+
+# Build a daily cost calendar (one row per calendar day)
+cost_cal = pd.DataFrame({'date': pd.date_range(
+    start=f"{YEAR_START}-01-01", end=f"{YEAR_END}-12-31", freq='D')})
+cost_cal['date_str']   = cost_cal['date'].dt.strftime('%Y-%m-%d')
+cost_cal['year_month'] = cost_cal['date'].dt.strftime('%Y-%m')
+cost_cal['year']       = cost_cal['date'].dt.year
+
+# ── Natural Gas: MIBGAS API (primary) → local Excel (fallback) ───────────────
+print("  [Gas] Downloading from MIBGAS...")
+mibgas_dfs = []
+for _yr in range(YEAR_START, YEAR_END + 1):
+    _url = (f"https://www.mibgas.es/en/file-access/MIBGAS_Data_{_yr}.xlsx"
+            f"?path=AGNO_{_yr}/XLS")
+    try:
+        _resp = requests.get(_url, timeout=30)
+        if _resp.status_code != 200:
+            print(f"    [!] {_yr}: HTTP {_resp.status_code}"); continue
+        _xls  = pd.ExcelFile(pd.io.common.BytesIO(_resp.content))
+        _sheet = next((s for s in _xls.sheet_names if 'D+1' in s or 'DA' in s.upper()),
+                      _xls.sheet_names[0])
+        _raw  = _xls.parse(_sheet, header=None)
+        _hrow = next((i for i, row in _raw.iterrows()
+                      if any(k in str(v).lower() for v in row.values
+                             for k in ['trading', 'fecha', 'date'])), None)
+        if _hrow is None:
+            print(f"    [!] {_yr}: header not found"); continue
+        _df = _xls.parse(_sheet, header=_hrow)
+        _dc = next((c for c in _df.columns if any(
+                    k in str(c).lower() for k in ['trading', 'fecha', 'date'])), _df.columns[0])
+        _pc = next((c for c in _df.columns if any(
+                    k in str(c).lower() for k in ['reference', 'precio', 'price'])), _df.columns[1])
+        _dy = _df[[_dc, _pc]].copy()
+        _dy.columns = ['date_str', 'cost_gas_eur_mwh']
+        _dy['date_str'] = pd.to_datetime(_dy['date_str'], errors='coerce').dt.strftime('%Y-%m-%d')
+        _dy['cost_gas_eur_mwh'] = pd.to_numeric(_dy['cost_gas_eur_mwh'], errors='coerce')
+        _dy = _dy.dropna(subset=['date_str', 'cost_gas_eur_mwh'])
+        mibgas_dfs.append(_dy)
+        print(f"    OK {_yr}: {len(_dy)} trading days")
+    except Exception as _e:
+        print(f"    [!] {_yr}: {_e}")
+
+if mibgas_dfs:
+    _gas_df = pd.concat(mibgas_dfs, ignore_index=True).drop_duplicates('date_str')
+    cost_cal = pd.merge(cost_cal, _gas_df, on='date_str', how='left')
+    print(f"    -> {cost_cal['cost_gas_eur_mwh'].notna().sum()} days with gas price")
+else:
+    print("    [!!!] MIBGAS failed. Trying local Excel fallback...")
+    _gas_ok = False
+    for _p in [os.path.join(DATA_OTHER_DIR, "NaturalGas_Daily_Prices2020-2025.xlsx"),
+               os.path.join(DATA_OTHER_DIR, "NaturalGas_Daily_Prices2020-2025.csv")]:
+        if not os.path.exists(_p): continue
+        try:
+            _gf = pd.read_excel(_p) if _p.endswith('.xlsx') else pd.read_csv(_p)
+            _dc = 'Trading day' if 'Trading day' in _gf.columns else _gf.columns[0]
+            _pc = 'Reference Price [EUR/MWh]' if 'Reference Price [EUR/MWh]' in _gf.columns else _gf.columns[1]
+            _gf['date_str'] = pd.to_datetime(_gf[_dc]).dt.strftime('%Y-%m-%d')
+            _gf = _gf.rename(columns={_pc: 'cost_gas_eur_mwh'})[['date_str', 'cost_gas_eur_mwh']]
+            cost_cal = pd.merge(cost_cal, _gf, on='date_str', how='left')
+            print(f"    OK Fallback: {os.path.basename(_p)}")
+            _gas_ok = True; break
+        except Exception as _e:
+            print(f"    [!] {os.path.basename(_p)}: {_e}")
+    if not _gas_ok:
+        cost_cal['cost_gas_eur_mwh'] = np.nan
+
+# ── Coal, Diesel, EUR/USD FX: yfinance ───────────────────────────────────────
+print("  [Coal/Diesel] Downloading from Yahoo Finance...")
 try:
-    def load_file_flexible(base_name):
-        xlsx_path = os.path.join(DATA_OTHER_DIR, f"{base_name}.xlsx")
-        csv_path  = os.path.join(DATA_OTHER_DIR, f"{base_name}.csv")
-        if os.path.exists(xlsx_path):
-            return pd.read_excel(xlsx_path)
-        elif os.path.exists(csv_path):
-            return pd.read_csv(csv_path)
-        else:
-            raise FileNotFoundError(f"File {base_name} not found in {DATA_OTHER_DIR}")
+    _yf = yf.download(['MTF=F', 'HO=F', 'EURUSD=X'],
+                      start=yf_start, end=yf_end, progress=False)
+    if isinstance(_yf.columns, pd.MultiIndex):
+        _yf = _yf['Close']
+    _yf.index = pd.to_datetime(_yf.index).strftime('%Y-%m-%d')
+    _yf = _yf.reset_index()
+    _yf.columns.values[0] = 'date_str'
+    cost_cal = pd.merge(cost_cal, _yf, on='date_str', how='left')
+    _fx = pd.to_numeric(cost_cal['EURUSD=X'], errors='coerce')
+    cost_cal['cost_coal_eur_mwh'] = (
+        pd.to_numeric(cost_cal['MTF=F'], errors='coerce') / _fx / COAL_MWH_PER_TON)
+    cost_cal['cost_diesel_eur_mwh'] = (
+        pd.to_numeric(cost_cal['HO=F'], errors='coerce') / _fx / DIESEL_MWH_PER_GALLON)
+    print(f"    OK Coal:   {cost_cal['cost_coal_eur_mwh'].notna().sum()} days")
+    print(f"    OK Diesel: {cost_cal['cost_diesel_eur_mwh'].notna().sum()} days")
+except Exception as _e:
+    print(f"    [!] yfinance error: {_e}")
+    cost_cal['cost_coal_eur_mwh']   = np.nan
+    cost_cal['cost_diesel_eur_mwh'] = np.nan
 
-    df_gas = load_file_flexible("NaturalGas_Daily_Prices2020-2025")
-    df_cde = load_file_flexible("Coal_Diesel_ETS_Monthly_Costs")
-    df_ura = load_file_flexible("Uranium_Annual_Prices2020-2024")
+# ── EU ETS CO2: yfinance (primary) → local Excel fallback ────────────────────
+print("  [ETS] Downloading EU ETS CO2 price...")
+_ets_ok = False
+try:
+    _ets = yf.download('^ICEEUA', start=yf_start, end=yf_end, progress=False)
+    if isinstance(_ets.columns, pd.MultiIndex):
+        _ets = _ets['Close']
+    else:
+        _ets = _ets[['Close']]
+    _ets.index = pd.to_datetime(_ets.index).strftime('%Y-%m-%d')
+    _ets = _ets.reset_index()
+    _ets.columns = ['date_str', 'eu_ets_price_eur_tco2']
+    _ets['eu_ets_price_eur_tco2'] = pd.to_numeric(_ets['eu_ets_price_eur_tco2'], errors='coerce')
+    if _ets['eu_ets_price_eur_tco2'].notna().sum() > 100:
+        cost_cal = pd.merge(cost_cal, _ets, on='date_str', how='left')
+        print(f"    OK ^ICEEUA: {_ets['eu_ets_price_eur_tco2'].notna().sum()} days")
+        _ets_ok = True
+    else:
+        print(f"    [!] ^ICEEUA: insufficient data — using local Excel fallback")
+except Exception as _e:
+    print(f"    [!] ^ICEEUA: {_e} — using local Excel fallback")
 
-    col_fecha_gas  = 'Trading day' if 'Trading day' in df_gas.columns else df_gas.columns[0]
-    col_precio_gas = 'Reference Price [EUR/MWh]' if 'Reference Price [EUR/MWh]' in df_gas.columns else df_gas.columns[1]
-    df_gas['date'] = pd.to_datetime(df_gas[col_fecha_gas]).dt.strftime('%Y-%m-%d')
-    df_gas = df_gas.rename(columns={col_precio_gas: 'cost_gas_eur_mwh'})[['date', 'cost_gas_eur_mwh']]
+if not _ets_ok:
+    for _p in [os.path.join(DATA_OTHER_DIR, "Coal_Diesel_ETS_Monthly_Costs.xlsx"),
+               os.path.join(DATA_OTHER_DIR, "Coal_Diesel_ETS_Monthly_Costs.csv")]:
+        if not os.path.exists(_p): continue
+        try:
+            _cde = pd.read_excel(_p) if _p.endswith('.xlsx') else pd.read_csv(_p)
+            _dc  = 'Date' if 'Date' in _cde.columns else _cde.columns[0]
+            _cde['year_month'] = pd.to_datetime(_cde[_dc]).dt.strftime('%Y-%m')
+            _ec  = next((c for c in _cde.columns if 'ets' in c.lower()), None)
+            if not _ec: raise ValueError("ETS column not found")
+            _ets_m = _cde[['year_month', _ec]].rename(columns={_ec: 'eu_ets_price_eur_tco2'})
+            cost_cal = pd.merge(cost_cal, _ets_m, on='year_month', how='left')
+            print(f"    OK Fallback: {os.path.basename(_p)}")
+            _ets_ok = True; break
+        except Exception as _e:
+            print(f"    [!] {os.path.basename(_p)}: {_e}")
+    if not _ets_ok:
+        print("    [!!!] EU ETS: all sources failed — filling with 0")
+        cost_cal['eu_ets_price_eur_tco2'] = 0.0
 
-    col_fecha_cde = 'Date' if 'Date' in df_cde.columns else df_cde.columns[0]
-    df_cde['year_month'] = pd.to_datetime(df_cde[col_fecha_cde]).dt.strftime('%Y-%m')
-    df_cde = df_cde.rename(columns={
-        'coal_eur_mwh':          'cost_coal_eur_mwh',
-        'diesel_pretax_eur_mwh': 'cost_diesel_eur_mwh',
-        'eu_ets_usd_ton':        'eu_ets_price_eur_tco2'
-    })[['year_month', 'cost_coal_eur_mwh', 'cost_diesel_eur_mwh', 'eu_ets_price_eur_tco2']]
+# ── Uranium: yfinance (primary) → local Excel fallback ───────────────────────
+print("  [Uranium] Downloading Uranium price...")
+_ura_yf = False
+try:
+    _ura = yf.download('UX=F', start=yf_start, end=yf_end, progress=False)
+    if isinstance(_ura.columns, pd.MultiIndex):
+        _ura = _ura['Close']
+    else:
+        _ura = _ura[['Close']]
+    _ura.index = pd.to_datetime(_ura.index).strftime('%Y-%m-%d')
+    _ura = _ura.reset_index()
+    _ura.columns = ['date_str', 'uranium_usd_lb']
+    _ura['uranium_usd_lb'] = pd.to_numeric(_ura['uranium_usd_lb'], errors='coerce')
+    if _ura['uranium_usd_lb'].notna().sum() > 100:
+        cost_cal = pd.merge(cost_cal, _ura, on='date_str', how='left')
+        _fx = pd.to_numeric(cost_cal.get('EURUSD=X'), errors='coerce')
+        cost_cal['cost_uranium_eur_mwh'] = (
+            pd.to_numeric(cost_cal['uranium_usd_lb'], errors='coerce') / _fx / URANIUM_MWH_PER_LB)
+        print(f"    OK UX=F: {_ura['uranium_usd_lb'].notna().sum()} days")
+        _ura_yf = True
+    else:
+        print(f"    [!] UX=F: insufficient data — using local Excel fallback")
+except Exception as _e:
+    print(f"    [!] UX=F: {_e} — using local Excel fallback")
 
-    col_fecha_ura = 'year' if 'year' in df_ura.columns else df_ura.columns[0]
-    df_ura['year'] = pd.to_datetime(df_ura[col_fecha_ura].astype(str)).dt.year
-    df_ura['cost_uranium_eur_mwh'] = df_ura['cost_uranium_eur_mwh'] / 30.211
-    df_ura = df_ura[['year', 'cost_uranium_eur_mwh']]
+if not _ura_yf:
+    for _p in [os.path.join(DATA_OTHER_DIR, "Uranium_Annual_Prices2020-2024.xlsx"),
+               os.path.join(DATA_OTHER_DIR, "Uranium_Annual_Prices2020-2024.csv")]:
+        if not os.path.exists(_p): continue
+        try:
+            _uf = pd.read_excel(_p) if _p.endswith('.xlsx') else pd.read_csv(_p)
+            _yc = 'year' if 'year' in _uf.columns else _uf.columns[0]
+            _uf['year'] = pd.to_datetime(_uf[_yc].astype(str)).dt.year
+            _uf['cost_uranium_eur_mwh'] = (
+                pd.to_numeric(_uf['cost_uranium_eur_mwh'], errors='coerce') / URANIUM_MWH_PER_LB)
+            cost_cal = pd.merge(cost_cal, _uf[['year', 'cost_uranium_eur_mwh']], on='year', how='left')
+            print(f"    OK Fallback: {os.path.basename(_p)} (annual -> daily)")
+            break
+        except Exception as _e:
+            print(f"    [!] {os.path.basename(_p)}: {_e}")
+    if 'cost_uranium_eur_mwh' not in cost_cal.columns:
+        print("    [!!!] Uranium: all sources failed — filling with 0")
+        cost_cal['cost_uranium_eur_mwh'] = 0.0
 
-    full_df['date_only'] = full_df['datetime'].dt.strftime('%Y-%m-%d')
-    full_df = pd.merge(full_df, df_gas, left_on='date_only', right_on='date', how='left').drop(columns=['date', 'date_only'])
-    full_df = pd.merge(full_df, df_cde, on='year_month', how='left')
-    full_df = pd.merge(full_df, df_ura, on='year', how='left')
+# ── Fill weekends / market holidays, then merge into hourly dataframe ─────────
+_cost_cols = ['cost_gas_eur_mwh', 'cost_coal_eur_mwh', 'cost_diesel_eur_mwh',
+              'cost_uranium_eur_mwh', 'eu_ets_price_eur_tco2']
+cost_cal = cost_cal.sort_values('date')
+cost_cal[_cost_cols] = cost_cal[_cost_cols].ffill().bfill()
 
-    cost_cols = ['cost_gas_eur_mwh', 'cost_coal_eur_mwh', 'cost_diesel_eur_mwh', 'cost_uranium_eur_mwh', 'eu_ets_price_eur_tco2']
-    full_df[cost_cols] = full_df[cost_cols].ffill().bfill()
-
-except Exception as e:
-    print(f"\n[!!!] CRITICAL ERROR LOADING COSTS: {e}\n")
-    for c in ['cost_gas_eur_mwh', 'cost_coal_eur_mwh', 'cost_diesel_eur_mwh', 'cost_uranium_eur_mwh', 'eu_ets_price_eur_tco2']:
-        full_df[c] = 0.0
+full_df['_date_only'] = full_df['datetime'].dt.strftime('%Y-%m-%d')
+full_df = pd.merge(
+    full_df,
+    cost_cal[['date_str'] + _cost_cols],
+    left_on='_date_only', right_on='date_str', how='left'
+).drop(columns=['date_str', '_date_only'])
+full_df[_cost_cols] = full_df[_cost_cols].ffill().bfill()
 
 
 # =========================================================
