@@ -13,11 +13,7 @@ They are organized as follows:
 These are non essential to replicate the paper as we provide the complete datasets, but show where the data was sourced from.
 Note that both the [ESIOS](https://api.esios.ree.es/) and [ENTSO-e](https://transparencyplatform.zendesk.com/hc/en-us/articles/12845911031188-How-to-get-security-token) API request a valid personal token, which you can ask in the hyperlinks to each source.
 
-*Cristobal to edit this when he is done*
-
--   11_list_all_indicators.R creates an Excel file with the code and description of all the indicators available in the ESIOS API saved in the data/ folder.
--   12_retrieve_api_data.R gets all the data from a selection of indicators
--   13_process_historical_data.R processes the dataset such that it is ready to input to the model for calibration an saves it to the data/ folder as a csv file.
+-   Codigo_historical_data.py does everything in one go: downloads hourly generation, demand, spot prices, interconnection flows and installed capacities from ESIOS, fetches disaggregated hydro data from ENTSO-E, pulls fuel and carbon costs from MIBGAS and Yahoo Finance (with local Excel fallbacks for ETS and uranium), applies a three-step missing data imputation, and saves the final dataset to data/historical_data.csv. It is the only script you need to run to regenerate the main dataset from scratch.
 
 2. Scripts to run the Monte Carlo Simulations
 
