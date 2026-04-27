@@ -33,7 +33,7 @@ Once you have them, set them at the top of the script and run it from the root o
 ```bash
 python scripts/Codigo_historical_data.py
 ```
-
+.
 ### What comes from ESIOS
 
 ESIOS is the data portal of Red Eléctrica de España and it is the main source for the Spanish electricity system data. The script downloads:
