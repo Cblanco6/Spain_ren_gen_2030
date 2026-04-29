@@ -247,10 +247,12 @@ print("--- IMPUTATION COMPLETE ---\n")
 # =========================================================
 
 # Fixed hydro capacities (manually set from REE official figures, MW)
-full_df['run_of_river_hydro_cap_mw']   = 1154.8
-full_df['pumped_hydro_turbine_cap_mw'] = 3417.5
+# Run of river increased to 2000 MW to cover generation peaks (~1994 MW).
+# Conventional hydro decreased proportionally (15771.4 - (2000 - 1154.8)) to maintain total hydro capacity.
+full_df['run_of_river_hydro_cap_mw']   = 2000.0
+full_df['pumped_hydro_turb_cap_mw']    = 3417.5
 full_df['pumped_hydro_pump_cap_mw']    = 2278.0
-full_df['conventional_hydro_cap_mw']   = 15771.4
+full_df['conventional_hydro_cap_mw']   = 14926.2
 
 # Battery capacity by year (MW, source: REE System Reports 2020-2024).
 # Grid-scale battery storage in Spain remained at ~25 MW throughout 2020-2024
@@ -533,20 +535,20 @@ full_df[quantities] = full_df[quantities] / 1000.0
 rename_dict_quant = {c: c.replace('_mwh', '_gwh').replace('_mw', '_gw') for c in quantities}
 full_df = full_df.rename(columns=rename_dict_quant)
 
-# 2. PRICES: multiply by 1000 (€/MWh → €/GWh)
-prices = [c for c in full_df.columns if c.startswith('cost_') or c.startswith('spot_')]
+# 2. PRICES: multiply by 1000 (€/MWh → €/GWh). Spot price is kept in EUR/MWh.
+prices = [c for c in full_df.columns if c.startswith('cost_')]
 full_df[prices] = full_df[prices] * 1000.0
 rename_dict_prices = {c: c.replace('_mwh', '_gwh') for c in prices}
 full_df = full_df.rename(columns=rename_dict_prices)
 
 official_order = [
-    'time_long', 'year', 'month', 'day', 'hour', 'spot_price_eur_gwh',
+    'time_long', 'year', 'month', 'day', 'hour', 'spot_price_eur_mwh',
     'residential_demand_gwh', 'commercial_demand_gwh', 'industrial_demand_gwh',
 
     # Capacities
     'coal_cap_gw', 'combined_cycle_cap_gw', 'gas_turbine_cap_gw', 'vapor_turbine_cap_gw',
     'cogeneration_cap_gw', 'diesel_cap_gw', 'nonrenewable_waste_cap_gw', 'nuclear_cap_gw',
-    'conventional_hydro_cap_gw', 'run_of_river_hydro_cap_gw', 'pumped_hydro_turbine_cap_gw', 'pumped_hydro_pump_cap_gw',
+    'conventional_hydro_cap_gw', 'run_of_river_hydro_cap_gw', 'pumped_hydro_turb_cap_gw', 'pumped_hydro_pump_cap_gw',
     'solar_pv_cap_gw', 'solar_thermal_cap_gw', 'wind_cap_gw', 'other_renewable_cap_gw',
     'renewable_waste_cap_gw', 'batteries_cap_gw',
 
